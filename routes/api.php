@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\DealershipController;
 use App\Http\Controllers\Api\V1\SessionController;
 use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\ShiftController;
+use App\Http\Controllers\Api\V1\ImportantLinkController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\UserApiController;
 use App\Http\Controllers\FrontController;
@@ -23,12 +24,6 @@ Route::prefix('v1')->group(function () {
         '/session',
         [SessionController::class, 'store']
     )->middleware('throttle:100,1440');
-
-    // Регистрация пользовтеля (регистрация)
-    Route::post(
-        '/register',
-        [AuthController::class, 'register']
-    )->middleware('throttle:50,1440');
 
     // Закрытие сессии (логаут)
     Route::delete(
@@ -48,7 +43,10 @@ Route::prefix('v1')->group(function () {
         ->group(function () {
             // Users
             Route::get('/users', [UserApiController::class, 'index']);
-            Route::get('/users/{id}', [UserApiController::class, 'show']);
+            Route::post('/users', [UserApiController::class, 'store']);
+            Route::get('/users/{user}', [UserApiController::class, 'show']);
+            Route::put('/users/{user}', [UserApiController::class, 'update']);
+            Route::delete('/users/{user}', [UserApiController::class, 'destroy']);
             Route::get('/users/{id}/status', [UserApiController::class, 'status']);
 
             // Dealerships
@@ -70,6 +68,11 @@ Route::prefix('v1')->group(function () {
             Route::get('/tasks/{id}', [TaskController::class, 'show']);
             Route::put('/tasks/{id}', [TaskController::class, 'update']);
 
+            // Important Links
+            Route::apiResource('important-links', ImportantLinkController::class)->parameters([
+                'important-links' => 'link'
+            ]);
+
             // Dashboard
             Route::get('/dashboard', [DashboardController::class, 'index']);
 
@@ -81,5 +84,6 @@ Route::prefix('v1')->group(function () {
             Route::post('/settings', [SettingsController::class, 'store']);
             Route::put('/settings/{id}', [SettingsController::class, 'update']);
             Route::delete('/settings/{id}', [SettingsController::class, 'destroy']);
+            Route::post('/settings/archive-tasks', [SettingsController::class, 'archiveTasks']);
         });
 });

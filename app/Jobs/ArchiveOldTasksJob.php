@@ -14,109 +14,52 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Job to archive old completed tasks after N days (configurable, default 30)
- */
 class ArchiveOldTasksJob implements ShouldQueue
 {
-    use Dispatchable;
-    use InteractsWithQueue;
-    use Queueable;
-    use SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Execute the job.
+     * @param int|null $daysOverride Manual override for the number of days.
      */
+    public function __construct(
+        private readonly ?int $daysOverride = null
+    ) {
+    }
+
     public function handle(SettingsService $settingsService): void
     {
         try {
             $now = Carbon::now();
             $archivedCount = 0;
 
-            // Get all dealerships and archive their tasks
             $dealerships = \App\Models\AutoDealership::all();
+            $dealerships->push(null); // Add null to handle global tasks
 
             foreach ($dealerships as $dealership) {
-                $archiveDays = $settingsService->getTaskArchiveDays($dealership->id);
+                $dealershipId = $dealership->id ?? null;
+
+                $archiveDays = $this->daysOverride ?? $settingsService->getTaskArchiveDays($dealershipId);
                 $archiveDate = $now->copy()->subDays($archiveDays);
 
-                // Find completed tasks older than archive date
-                $tasksToArchive = Task::where('dealership_id', $dealership->id)
+                $tasksToArchive = Task::where('dealership_id', $dealershipId)
                     ->whereNull('archived_at')
                     ->where('created_at', '<', $archiveDate)
-                    ->whereHas('responses', function ($query) {
-                        $query->where('status', 'completed');
+                    ->where(function ($query) {
+                        $query->whereHas('responses', fn ($q) => $q->where('status', 'completed'))
+                              ->orWhere('is_active', false);
                     })
-                    ->get();
+                    ->whereDoesntHave('assignments.user', function ($query) {
+                        // Exclude tasks that are not completed by all assigned users
+                        $query->whereDoesntHave('taskResponses', fn($q) => $q->where('status', 'completed'));
+                    })
+                    ->update(['archived_at' => $now]);
 
-                foreach ($tasksToArchive as $task) {
-                    // Check if all assigned users have completed responses
-                    $assignments = $task->assignments;
-                    $allCompleted = true;
-
-                    foreach ($assignments as $assignment) {
-                        $hasCompletedResponse = $task->responses()
-                            ->where('user_id', $assignment->user_id)
-                            ->where('status', 'completed')
-                            ->exists();
-
-                        if (!$hasCompletedResponse) {
-                            $allCompleted = false;
-                            break;
-                        }
-                    }
-
-                    if ($allCompleted && $assignments->count() > 0) {
-                        $task->archived_at = $now;
-                        $task->save();
-                        $archivedCount++;
-                    }
-                }
+                $archivedCount += $tasksToArchive;
             }
 
-            // Also archive tasks with no dealership
-            $globalArchiveDays = $settingsService->getTaskArchiveDays(null);
-            $globalArchiveDate = $now->copy()->subDays($globalArchiveDays);
-
-            $globalTasksToArchive = Task::whereNull('dealership_id')
-                ->whereNull('archived_at')
-                ->where('created_at', '<', $globalArchiveDate)
-                ->whereHas('responses', function ($query) {
-                    $query->where('status', 'completed');
-                })
-                ->get();
-
-            foreach ($globalTasksToArchive as $task) {
-                // Check if all assigned users have completed responses
-                $assignments = $task->assignments;
-                $allCompleted = true;
-
-                foreach ($assignments as $assignment) {
-                    $hasCompletedResponse = $task->responses()
-                        ->where('user_id', $assignment->user_id)
-                        ->where('status', 'completed')
-                        ->exists();
-
-                    if (!$hasCompletedResponse) {
-                        $allCompleted = false;
-                        break;
-                    }
-                }
-
-                if ($allCompleted && $assignments->count() > 0) {
-                    $task->archived_at = $now;
-                    $task->save();
-                    $archivedCount++;
-                }
-            }
-
-            Log::info('ArchiveOldTasksJob completed', [
-                'archived_count' => $archivedCount,
-            ]);
+            Log::info('ArchiveOldTasksJob completed', ['archived_count' => $archivedCount]);
         } catch (\Throwable $e) {
-            Log::error('ArchiveOldTasksJob failed: ' . $e->getMessage(), [
-                'exception' => $e,
-            ]);
+            Log::error('ArchiveOldTasksJob failed: ' . $e->getMessage(), ['exception' => $e]);
             throw $e;
         }
     }

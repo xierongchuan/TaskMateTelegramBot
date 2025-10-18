@@ -47,7 +47,7 @@ class OpenShiftConversation extends BaseConversation
 
             $bot->sendMessage(
                 '📸 Пожалуйста, загрузите фото экрана компьютера с текущим временем для открытия смены.',
-                reply_markup: static::inlineConfirmDecline('skip_photo', 'cancel')
+                reply_markup: \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
                     ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
                         text: '❌ Отменить',
                         callback_data: 'cancel'
@@ -80,7 +80,11 @@ class OpenShiftConversation extends BaseConversation
                 $bot->sendMessage(
                     '⚠️ Пожалуйста, отправьте фото.\n\n' .
                     'Или нажмите кнопку "Отменить" для выхода.',
-                    reply_markup: static::inlineConfirmDecline('skip_photo', 'cancel')
+                    reply_markup: \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
+                        ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
+                            text: '❌ Отменить',
+                            callback_data: 'cancel'
+                        ))
                 );
                 $this->next('handlePhoto');
                 return;

@@ -82,6 +82,12 @@ class SettingsController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+        if ($user->role !== \App\Enums\Role::OWNER->value && $user->role !== \App\Enums\Role::MANAGER->value) {
+            return response()->json(['success' => false, 'message' => 'Доступ запрещен'], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'key' => 'required|string|max:100',
             'value' => 'required',
@@ -98,6 +104,12 @@ class SettingsController extends Controller
         }
 
         $data = $validator->validated();
+
+        if ($user->role === \App\Enums\Role::MANAGER->value) {
+            if (empty($data['dealership_id']) || $data['dealership_id'] !== $user->dealership_id) {
+                return response()->json(['success' => false, 'message' => 'Вы не можете изменять эти настройки'], 403);
+            }
+        }
 
         $setting = $this->settingsService->set(
             $data['key'],
@@ -129,6 +141,16 @@ class SettingsController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $setting = Setting::findOrFail($id);
+
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+        if ($user->role === \App\Enums\Role::MANAGER->value) {
+            if ($setting->dealership_id !== $user->dealership_id) {
+                return response()->json(['success' => false, 'message' => 'Доступ запрещен'], 403);
+            }
+        } elseif ($user->role !== \App\Enums\Role::OWNER->value) {
+            return response()->json(['success' => false, 'message' => 'Доступ запрещен'], 403);
+        }
 
         $validator = Validator::make($request->all(), [
             'value' => 'required',
@@ -174,6 +196,17 @@ class SettingsController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $setting = Setting::findOrFail($id);
+
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+        if ($user->role === \App\Enums\Role::MANAGER->value) {
+            if ($setting->dealership_id !== $user->dealership_id) {
+                return response()->json(['success' => false, 'message' => 'Доступ запрещен'], 403);
+            }
+        } elseif ($user->role !== \App\Enums\Role::OWNER->value) {
+            return response()->json(['success' => false, 'message' => 'Доступ запрещен'], 403);
+        }
+
         $setting->delete();
 
         // Clear cache
@@ -265,6 +298,28 @@ class SettingsController extends Controller
             'success' => true,
             'message' => 'Shift configuration updated successfully',
             'data' => $updated,
+        ]);
+    }
+
+    /**
+     * Manually trigger task archiving
+     *
+     * POST /api/v1/settings/archive-tasks
+     */
+    public function archiveTasks(Request $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+        if ($user->role !== \App\Enums\Role::OWNER->value) {
+            return response()->json(['success' => false, 'message' => 'Доступ запрещен'], 403);
+        }
+
+        $days = (int) $request->input('days');
+        \App\Jobs\ArchiveOldTasksJob::dispatch($days > 0 ? $days : null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Архивация старых задач запущена в фоновом режиме.',
         ]);
     }
 }

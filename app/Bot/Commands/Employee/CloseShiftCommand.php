@@ -38,25 +38,37 @@ class CloseShiftCommand extends BaseCommandHandler
         $openShift->status = 'closed';
         $openShift->save();
 
-        // Check for incomplete tasks during this shift
+        // Log incomplete tasks
         $incompleteTasks = Task::whereHas('assignments', function ($query) use ($user) {
             $query->where('user_id', $user->id);
         })
         ->where('is_active', true)
-        ->whereDoesntHave('responses', function ($query) use ($user, $openShift) {
-            $query->where('user_id', $user->id)
-                ->where('status', 'completed')
-                ->whereBetween('responded_at', [
-                    $openShift->shift_start,
-                    $openShift->shift_end
-                ]);
+        ->where(function ($query) use ($user) {
+            $query->whereDoesntHave('responses', function ($subQuery) use ($user) {
+                $subQuery->where('user_id', $user->id);
+            })
+            ->orWhereHas('responses', function ($subQuery) use ($user) {
+                $subQuery->where('user_id', $user->id)
+                         ->where('status', '!=', 'completed');
+            });
         })
-        ->count();
+        ->get();
+
+        $incompleteTasksCount = $incompleteTasks->count();
+
+        foreach ($incompleteTasks as $task) {
+            \App\Models\AuditLog::create([
+                'user_id' => $user->id,
+                'dealership_id' => $user->dealership_id,
+                'action' => 'incomplete_task_on_shift_close',
+                'details' => "Task #{$task->id} ('{$task->title}') was not completed.",
+            ]);
+        }
 
         $message = '✅ Смена закрыта в ' . Carbon::now()->format('H:i d.m.Y');
 
-        if ($incompleteTasks > 0) {
-            $message .= "\n\n⚠️ Незавершённых задач: " . $incompleteTasks;
+        if ($incompleteTasksCount > 0) {
+            $message .= "\n\n⚠️ Незавершённых задач: " . $incompleteTasksCount;
         }
 
         $bot->sendMessage($message, reply_markup: static::employeeMenu());

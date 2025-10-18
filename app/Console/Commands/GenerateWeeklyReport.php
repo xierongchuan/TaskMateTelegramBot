@@ -89,78 +89,75 @@ class GenerateWeeklyReport extends Command
 
     private function collectReportData(AutoDealership $dealership, Carbon $start, Carbon $end): array
     {
-        // Get shifts for the week
+        // Shifts
         $shifts = Shift::where('dealership_id', $dealership->id)
             ->whereBetween('shift_start', [$start, $end])
-            ->with(['user', 'replacement'])
+            ->with('user', 'replacement.replacedUser', 'replacement.replacingUser')
             ->get();
-
-        // Get tasks for the week
-        $tasks = Task::where('dealership_id', $dealership->id)
-            ->whereBetween('created_at', [$start, $end])
-            ->with(['responses', 'assignedUsers'])
-            ->get();
-
-        // Calculate statistics
         $lateShifts = $shifts->where('status', 'late');
-        $replacements = ShiftReplacement::whereIn('shift_id', $shifts->pluck('id'))->get();
+        $replacements = $shifts->map(fn($s) => $s->replacement)->filter();
 
-        $completedTasks = $tasks->filter(function ($task) {
-            return $task->responses->where('status', 'completed')->count() > 0;
-        });
+        // Tasks
+        $taskResponses = TaskResponse::whereBetween('responded_at', [$start, $end])
+            ->whereHas('task', fn($q) => $q->where('dealership_id', $dealership->id))
+            ->with('task', 'user')
+            ->get();
 
-        $overdueTasks = $tasks->filter(function ($task) {
-            return $task->deadline && $task->deadline->isPast() &&
-                   $task->responses->where('status', 'completed')->isEmpty();
-        });
+        $completedTasks = $taskResponses->where('status', 'completed');
+        $postponedTasks = $taskResponses->where('status', 'postponed');
 
-        $postponedTasks = $tasks->filter(function ($task) {
-            return $task->postpone_count > 0;
-        });
+        $overdueTasks = Task::where('dealership_id', $dealership->id)
+            ->whereBetween('deadline', [$start, $end])
+            ->whereDoesntHave('responses', fn($q) => $q->where('status', 'completed'))
+            ->get();
 
-        // Get top problems (most postponed tasks)
-        $topProblems = $tasks->sortByDesc('postpone_count')->take(5);
+        // Top problems (most postponed tasks in the period)
+        $topProblemIds = TaskResponse::where('status', 'postponed')
+            ->whereBetween('responded_at', [$start, $end])
+            ->select('task_id')
+            ->groupBy('task_id')
+            ->orderByRaw('COUNT(*) DESC')
+            ->limit(5)
+            ->pluck('task_id');
+        $topProblems = Task::find($topProblemIds);
 
-        // Per-employee statistics
+        // Employee stats
         $employeeStats = [];
         $employees = User::where('dealership_id', $dealership->id)
             ->where('role', 'employee')
+            ->withCount([
+                'shifts' => fn($q) => $q->whereBetween('shift_start', [$start, $end]),
+                'lateShifts' => fn($q) => $q->whereBetween('shift_start', [$start, $end]),
+                'completedTasks' => fn($q) => $q->whereBetween('responded_at', [$start, $end]),
+                'postponedTasks' => fn($q) => $q->whereBetween('responded_at', [$start, $end]),
+            ])
             ->get();
 
-        foreach ($employees as $employee) {
-            $employeeShifts = $shifts->where('user_id', $employee->id);
-            $employeeTasks = TaskResponse::whereIn('task_id', $tasks->pluck('id'))
-                ->where('user_id', $employee->id)
-                ->get();
-
+        foreach($employees as $employee) {
             $employeeStats[] = [
                 'name' => $employee->full_name,
-                'shifts' => $employeeShifts->count(),
-                'late_shifts' => $employeeShifts->where('status', 'late')->count(),
-                'completed_tasks' => $employeeTasks->where('status', 'completed')->count(),
-                'postponed_tasks' => $employeeTasks->where('status', 'postponed')->count(),
+                'shifts' => $employee->shifts_count,
+                'late_shifts' => $employee->late_shifts_count,
+                'completed_tasks' => $employee->completed_tasks_count,
+                'postponed_tasks' => $employee->postponed_tasks_count,
             ];
         }
 
         return [
             'dealership' => $dealership,
-            'period' => [
-                'start' => $start,
-                'end' => $end,
-            ],
+            'period' => ['start' => $start, 'end' => $end],
             'summary' => [
                 'total_shifts' => $shifts->count(),
                 'late_shifts' => $lateShifts->count(),
                 'replacements' => $replacements->count(),
-                'total_tasks' => $tasks->count(),
                 'completed_tasks' => $completedTasks->count(),
                 'overdue_tasks' => $overdueTasks->count(),
                 'postponed_tasks' => $postponedTasks->count(),
             ],
             'top_problems' => $topProblems,
             'employee_stats' => $employeeStats,
-            'late_shifts' => $lateShifts,
-            'replacements' => $replacements,
+            'late_shifts_details' => $lateShifts,
+            'replacements_details' => $replacements,
         ];
     }
 
@@ -203,13 +200,12 @@ class GenerateWeeklyReport extends Command
 
         $message .= "*Смены:*\n";
         $message .= "• Всего смен: {$summary['total_shifts']}\n";
-        $message .= "• Опозданий: {$summary['late_shifts']}\n";
-        $message .= "• Замещений: {$summary['replacements']}\n\n";
+        $message .= "• ⚠️ Опозданий: {$summary['late_shifts']}\n";
+        $message .= "• 🔄 Замещений: {$summary['replacements']}\n\n";
 
         $message .= "*Задачи:*\n";
-        $message .= "• Всего задач: {$summary['total_tasks']}\n";
-        $message .= "• Выполнено: {$summary['completed_tasks']}\n";
-        $message .= "• Просрочено: {$summary['overdue_tasks']}\n";
+        $message .= "• ✅ Выполнено: {$summary['completed_tasks']}\n";
+        $message .= "• 🚨 Просрочено: {$summary['overdue_tasks']}\n";
         $message .= "• Перенесено: {$summary['postponed_tasks']}\n\n";
 
         if (!empty($data['top_problems']) && $data['top_problems']->count() > 0) {

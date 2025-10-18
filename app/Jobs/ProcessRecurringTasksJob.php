@@ -14,98 +14,71 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Job to process recurring tasks (daily, weekly, monthly)
- */
 class ProcessRecurringTasksJob implements ShouldQueue
 {
-    use Dispatchable;
-    use InteractsWithQueue;
-    use Queueable;
-    use SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Execute the job.
-     */
     public function handle(): void
     {
         try {
             $now = Carbon::now();
-
-            // Get all active recurring tasks
-            $recurringTasks = Task::where('is_active', true)
+            $templateTasks = Task::where('is_active', true)
                 ->whereNotNull('recurrence')
-                ->whereIn('recurrence', ['daily', 'weekly', 'monthly'])
                 ->get();
 
-            foreach ($recurringTasks as $task) {
-                if ($this->shouldCreateNewInstance($task, $now)) {
-                    $this->createTaskInstance($task, $now);
+            foreach ($templateTasks as $template) {
+                if ($this->shouldCreateNewInstance($template, $now)) {
+                    $this->createTaskInstance($template, $now);
                 }
             }
 
-            Log::info('ProcessRecurringTasksJob completed', [
-                'tasks_processed' => $recurringTasks->count(),
-            ]);
+            Log::info('ProcessRecurringTasksJob completed', ['tasks_processed' => $templateTasks->count()]);
         } catch (\Throwable $e) {
-            Log::error('ProcessRecurringTasksJob failed: ' . $e->getMessage(), [
-                'exception' => $e,
-            ]);
+            Log::error('ProcessRecurringTasksJob failed: ' . $e->getMessage(), ['exception' => $e]);
             throw $e;
         }
     }
 
-    /**
-     * Check if a new instance of the task should be created
-     */
-    private function shouldCreateNewInstance(Task $task, Carbon $now): bool
+    private function shouldCreateNewInstance(Task $template, Carbon $now): bool
     {
-        // Check if there's already an active instance for today
-        $existingInstance = Task::where('title', $task->title)
-            ->where('dealership_id', $task->dealership_id)
-            ->where('appear_date', '>=', $now->copy()->startOfDay())
-            ->where('appear_date', '<=', $now->copy()->endOfDay())
-            ->where('id', '!=', $task->id)
+        // 1. Check if an instance for today already exists
+        $alreadyCreated = Task::where('original_task_id', $template->id)
+            ->whereDate('created_at', $now->toDateString())
             ->exists();
 
-        if ($existingInstance) {
+        if ($alreadyCreated) {
             return false;
         }
 
-        // Check recurrence pattern
-        return match ($task->recurrence) {
-            'daily' => true, // Always create for daily tasks
-            'weekly' => $now->dayOfWeek === $task->created_at->dayOfWeek,
-            'monthly' => $now->day === $task->created_at->day,
+        // 2. Check the recurrence rule
+        return match ($template->recurrence) {
+            'daily' => true,
+            'weekly' => $now->dayOfWeek === $template->created_at->dayOfWeek,
+            'monthly' => $now->day === $template->created_at->day,
             default => false,
         };
     }
 
-    /**
-     * Create a new instance of the recurring task
-     */
-    private function createTaskInstance(Task $originalTask, Carbon $now): void
+    private function createTaskInstance(Task $template, Carbon $now): void
     {
         try {
-            // Create new task instance
             $newTask = Task::create([
-                'title' => $originalTask->title,
-                'description' => $originalTask->description,
-                'comment' => $originalTask->comment,
-                'creator_id' => $originalTask->creator_id,
-                'dealership_id' => $originalTask->dealership_id,
+                'title' => $template->title,
+                'description' => $template->description,
+                'comment' => $template->comment,
+                'creator_id' => $template->creator_id,
+                'dealership_id' => $template->dealership_id,
                 'appear_date' => $now,
-                'deadline' => $originalTask->deadline ? $now->copy()->setTimeFrom($originalTask->deadline) : null,
-                'recurrence' => null, // Instance tasks are not recurring
-                'task_type' => $originalTask->task_type,
-                'response_type' => $originalTask->response_type,
-                'tags' => $originalTask->tags,
+                'deadline' => $template->deadline ? $now->copy()->setTimeFrom($template->deadline) : null,
+                'recurrence' => null,
+                'task_type' => $template->task_type,
+                'response_type' => $template->response_type,
+                'tags' => $template->tags,
                 'is_active' => true,
+                'original_task_id' => $template->id,
             ]);
 
-            // Copy assignments from original task
-            $assignments = TaskAssignment::where('task_id', $originalTask->id)->get();
-            foreach ($assignments as $assignment) {
+            foreach ($template->assignments as $assignment) {
                 TaskAssignment::create([
                     'task_id' => $newTask->id,
                     'user_id' => $assignment->user_id,
@@ -113,13 +86,12 @@ class ProcessRecurringTasksJob implements ShouldQueue
             }
 
             Log::info('Created recurring task instance', [
-                'original_task_id' => $originalTask->id,
+                'template_task_id' => $template->id,
                 'new_task_id' => $newTask->id,
-                'recurrence' => $originalTask->recurrence,
             ]);
         } catch (\Throwable $e) {
-            Log::error('Failed to create recurring task instance: ' . $e->getMessage(), [
-                'task_id' => $originalTask->id,
+            Log::error('Failed to create recurring task instance', [
+                'task_id' => $template->id,
                 'exception' => $e,
             ]);
         }
