@@ -103,4 +103,63 @@ class ShiftController extends Controller
             ]
         ]);
     }
+
+    /**
+     * Get shifts for the authenticated user
+     */
+    public function my(Request $request)
+    {
+        $user = $request->user();
+        $perPage = (int) $request->query('per_page', '15');
+        $status = $request->query('status');
+        $dateFrom = $request->query('date_from');
+        $dateTo = $request->query('date_to');
+
+        $query = Shift::with(['user', 'dealership', 'replacement'])
+            ->where('user_id', $user->id);
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        if ($dateFrom) {
+            $query->where('shift_start', '>=', Carbon::parse($dateFrom)->startOfDay());
+        }
+
+        if ($dateTo) {
+            $query->where('shift_start', '<=', Carbon::parse($dateTo)->endOfDay());
+        }
+
+        $shifts = $query->orderByDesc('shift_start')->paginate($perPage);
+
+        return response()->json($shifts);
+    }
+
+    /**
+     * Get the current active shift for the authenticated user
+     */
+    public function myCurrent(Request $request)
+    {
+        $user = $request->user();
+
+        $shift = Shift::with(['user', 'dealership', 'replacement'])
+            ->where('user_id', $user->id)
+            ->where('status', 'open')
+            ->whereNull('shift_end')
+            ->orderByDesc('shift_start')
+            ->first();
+
+        if (!$shift) {
+            return response()->json([
+                'success' => true,
+                'data' => null,
+                'message' => 'No active shift found'
+            ], 200);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $shift
+        ]);
+    }
 }

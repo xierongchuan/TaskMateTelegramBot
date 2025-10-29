@@ -75,6 +75,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/shifts', [ShiftController::class, 'index']);
             Route::get('/shifts/current', [ShiftController::class, 'current']);
             Route::get('/shifts/statistics', [ShiftController::class, 'statistics']);
+            Route::get('/shifts/my', [ShiftController::class, 'my']);
+            Route::get('/shifts/my/current', [ShiftController::class, 'myCurrent']);
             Route::get('/shifts/{id}', [ShiftController::class, 'show']);
 
             // Tasks

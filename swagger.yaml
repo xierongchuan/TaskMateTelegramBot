@@ -1909,6 +1909,108 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /shifts/my:
+    get:
+      tags:
+        - Shifts
+      summary: Получить смены текущего пользователя
+      description: Получение списка смен для аутентифицированного пользователя с пагинацией и фильтрацией
+      operationId: getMyShifts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          description: Количество элементов на странице
+          schema:
+            type: integer
+            default: 15
+            example: 20
+        - name: page
+          in: query
+          description: Номер страницы
+          schema:
+            type: integer
+            default: 1
+            example: 1
+        - name: status
+          in: query
+          description: Фильтр по статусу
+          schema:
+            type: string
+            enum: [open, closed]
+            example: open
+        - name: date_from
+          in: query
+          description: Фильтр по начальной дате
+          schema:
+            type: string
+            format: date
+            example: "2025-10-01"
+        - name: date_to
+          in: query
+          description: Фильтр по конечной дате
+          schema:
+            type: string
+            format: date
+            example: "2025-10-31"
+      responses:
+        '200':
+          description: Список смен пользователя
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Shift'
+        '401':
+          description: Неавторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /shifts/my/current:
+    get:
+      tags:
+        - Shifts
+      summary: Получить текущую открытую смену пользователя
+      description: Получение текущей активной смены аутентифицированного пользователя
+      operationId: getMyCurrentShift
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Текущая смена пользователя
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/Shift'
+                      - type: 'null'
+                    nullable: true
+                  message:
+                    type: string
+                    nullable: true
+                    example: No active shift found
+        '401':
+          description: Неавторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /tasks:
     get:
       tags:
