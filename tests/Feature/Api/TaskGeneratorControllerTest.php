@@ -203,10 +203,43 @@ class TaskGeneratorControllerTest extends TestCase
                 'success',
                 'data' => [
                     'generator_id',
-                    'total_generated',
-                    'completed_count',
-                    'pending_count',
-                    'completion_rate',
+                    'all_time' => [
+                        'total_generated',
+                        'completed_count',
+                        'expired_count',
+                        'pending_count',
+                        'on_time_count',
+                        'completion_rate',
+                        'on_time_rate',
+                    ],
+                    'week' => [
+                        'total_generated',
+                        'completed_count',
+                        'expired_count',
+                        'pending_count',
+                        'on_time_count',
+                        'completion_rate',
+                        'on_time_rate',
+                    ],
+                    'month' => [
+                        'total_generated',
+                        'completed_count',
+                        'expired_count',
+                        'pending_count',
+                        'on_time_count',
+                        'completion_rate',
+                        'on_time_rate',
+                    ],
+                    'year' => [
+                        'total_generated',
+                        'completed_count',
+                        'expired_count',
+                        'pending_count',
+                        'on_time_count',
+                        'completion_rate',
+                        'on_time_rate',
+                    ],
+                    'average_completion_time_minutes',
                 ]
             ]);
     }

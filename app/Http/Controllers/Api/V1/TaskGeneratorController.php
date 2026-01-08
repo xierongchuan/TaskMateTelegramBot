@@ -348,38 +348,122 @@ class TaskGeneratorController extends Controller
 
     /**
      * Get statistics for a task generator.
+     *
+     * Returns statistics for all time, week, month, and year periods.
      */
     public function statistics($id)
     {
         $generator = TaskGenerator::findOrFail($id);
 
-        $totalGenerated = $generator->generatedTasks()->count();
-        $completedCount = $generator->generatedTasks()
-            ->whereNotNull('archived_at')
-            ->where('archive_reason', 'completed')
-            ->count();
-        $expiredCount = $generator->generatedTasks()
-            ->whereNotNull('archived_at')
-            ->where('archive_reason', 'expired')
-            ->count();
-        $pendingCount = $generator->generatedTasks()
-            ->whereNull('archived_at')
-            ->count();
+        $allTime = $this->getStatsForPeriod($generator, null);
+        $week = $this->getStatsForPeriod($generator, 7);
+        $month = $this->getStatsForPeriod($generator, 30);
+        $year = $this->getStatsForPeriod($generator, 365);
 
-        $completionRate = $totalGenerated > 0
-            ? round(($completedCount / $totalGenerated) * 100, 2)
-            : 0;
+        // Calculate average completion time (in minutes)
+        $avgCompletionTime = $this->calculateAverageCompletionTime($generator);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'generator_id' => $generator->id,
-                'total_generated' => $totalGenerated,
-                'completed_count' => $completedCount,
-                'expired_count' => $expiredCount,
-                'pending_count' => $pendingCount,
-                'completion_rate' => $completionRate,
+                'all_time' => $allTime,
+                'week' => $week,
+                'month' => $month,
+                'year' => $year,
+                'average_completion_time_minutes' => $avgCompletionTime,
             ],
         ]);
     }
+
+    /**
+     * Get statistics for a specific period.
+     */
+    private function getStatsForPeriod(TaskGenerator $generator, ?int $days): array
+    {
+        $query = $generator->generatedTasks();
+
+        if ($days !== null) {
+            $startDate = Carbon::now()->subDays($days)->startOfDay();
+            $query = $query->where('scheduled_date', '>=', $startDate);
+        }
+
+        $tasksInPeriod = (clone $query)->get();
+
+        $totalGenerated = $tasksInPeriod->count();
+
+        $completedCount = $tasksInPeriod
+            ->filter(fn($t) => $t->archived_at !== null && $t->archive_reason === 'completed')
+            ->count();
+
+        $expiredCount = $tasksInPeriod
+            ->filter(fn($t) => $t->archived_at !== null && $t->archive_reason === 'expired')
+            ->count();
+
+        $pendingCount = $tasksInPeriod
+            ->filter(fn($t) => $t->archived_at === null)
+            ->count();
+
+        // Calculate on-time completions (completed before deadline)
+        $onTimeCount = 0;
+        foreach ($tasksInPeriod as $task) {
+            if ($task->archived_at !== null && $task->archive_reason === 'completed') {
+                if ($task->deadline && Carbon::parse($task->archived_at)->lte(Carbon::parse($task->deadline))) {
+                    $onTimeCount++;
+                }
+            }
+        }
+
+        $completionRate = $totalGenerated > 0
+            ? round(($completedCount / $totalGenerated) * 100, 2)
+            : 0;
+
+        $onTimeRate = $completedCount > 0
+            ? round(($onTimeCount / $completedCount) * 100, 2)
+            : 0;
+
+        return [
+            'total_generated' => $totalGenerated,
+            'completed_count' => $completedCount,
+            'expired_count' => $expiredCount,
+            'pending_count' => $pendingCount,
+            'on_time_count' => $onTimeCount,
+            'completion_rate' => $completionRate,
+            'on_time_rate' => $onTimeRate,
+        ];
+    }
+
+    /**
+     * Calculate average completion time in minutes.
+     */
+    private function calculateAverageCompletionTime(TaskGenerator $generator): ?float
+    {
+        $completedTasks = $generator->generatedTasks()
+            ->whereNotNull('archived_at')
+            ->where('archive_reason', 'completed')
+            ->whereNotNull('appear_date')
+            ->get();
+
+        if ($completedTasks->isEmpty()) {
+            return null;
+        }
+
+        $totalMinutes = 0;
+        $count = 0;
+
+        foreach ($completedTasks as $task) {
+            $appearDate = Carbon::parse($task->appear_date);
+            $completedAt = Carbon::parse($task->archived_at);
+            $minutes = $appearDate->diffInMinutes($completedAt);
+
+            // Sanity check - if completion time is negative or extremely long, skip
+            if ($minutes > 0 && $minutes < 60 * 24 * 7) { // Less than a week
+                $totalMinutes += $minutes;
+                $count++;
+            }
+        }
+
+        return $count > 0 ? round($totalMinutes / $count, 2) : null;
+    }
 }
+
