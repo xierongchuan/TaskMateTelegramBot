@@ -8,15 +8,28 @@ use App\Models\NotificationSetting;
 use App\Models\Task;
 use App\Models\TaskNotification;
 use App\Models\User;
+use App\Traits\KeyboardTrait;
+use App\Traits\MaterialDesign3Trait;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use SergiX44\Nutgram\Nutgram;
 
 /**
- * Service for sending task notifications to employees
+ * Service for sending task notifications to employees.
+ *
+ * Implements Material Design 3 principles for message formatting:
+ * - Clear visual hierarchy using MD3 typography patterns
+ * - Semantic icon usage for quick visual scanning
+ * - Consistent spacing and section organization
+ * - Accessible color semantics (success, warning, error states)
+ *
+ * @see https://m3.material.io/
  */
 class TaskNotificationService
 {
+    use KeyboardTrait;
+    use MaterialDesign3Trait;
+
     public function __construct(
         private Nutgram $bot
     ) {
@@ -59,7 +72,7 @@ class TaskNotificationService
             }
 
             $message = $this->formatTaskMessage($task, 'regular');
-            $keyboard = $this->getTaskKeyboard($task);
+            $keyboard = $this->buildTaskKeyboard($task);
 
             $this->bot->sendMessage(
                 text: $message,
@@ -130,7 +143,7 @@ class TaskNotificationService
             }
 
             $message = $this->formatUpcomingDeadlineMessage($task, $offset);
-            $keyboard = $this->getTaskKeyboard($task);
+            $keyboard = $this->buildTaskKeyboard($task);
 
             $this->bot->sendMessage(
                 text: $message,
@@ -172,7 +185,7 @@ class TaskNotificationService
             }
 
             $message = $this->formatOverdueMessage($task);
-            $keyboard = $this->getTaskKeyboard($task);
+            $keyboard = $this->buildTaskKeyboard($task);
 
             $this->bot->sendMessage(
                 text: $message,
@@ -214,7 +227,7 @@ class TaskNotificationService
             }
 
             $message = $this->formatHourOverdueMessage($task, $offset);
-            $keyboard = $this->getTaskKeyboard($task);
+            $keyboard = $this->buildTaskKeyboard($task);
 
             $this->bot->sendMessage(
                 text: $message,
@@ -506,113 +519,209 @@ class TaskNotificationService
         return null;
     }
 
-    // ... existing format methods ...
+    // ═══════════════════════════════════════════════════════════════════
+    // MESSAGE FORMATTING (MD3 Card Patterns)
+    // ═══════════════════════════════════════════════════════════════════
 
+    /**
+     * Format a regular task notification message.
+     * MD3: Card pattern with clear hierarchy - title, body, metadata.
+     */
     private function formatTaskMessage(Task $task, string $type = 'regular'): string
     {
-        $message = "📌 *{$task->title}*\n\n";
+        $lines = [];
 
+        // Header: Pin icon + title (MD3 headline)
+        $lines[] = "📌 *{$task->title}*";
+
+        // Body: Description (MD3 body text)
         if ($task->description) {
-            $message .= "{$task->description}\n\n";
+            $lines[] = '';
+            $lines[] = $task->description;
         }
 
+        // Supporting text: Comment
         if ($task->comment) {
-            $message .= "💬 Комментарий: {$task->comment}\n\n";
+            $lines[] = '';
+            $lines[] = "💬 {$task->comment}";
         }
+
+        // Metadata section (MD3 supporting text)
+        $metadata = [];
 
         if ($task->deadline) {
-            $message .= "⏰ Дедлайн: " . $task->deadline_for_bot . "\n";
+            $metadata[] = "⏰ Дедлайн: {$task->deadline_for_bot}";
         }
 
         if ($task->tags && is_array($task->tags) && !empty($task->tags)) {
-            $message .= "🏷️ Теги: " . implode(', ', $task->tags) . "\n";
+            $metadata[] = "🏷️ " . implode(' · ', $task->tags);
         }
 
-        return $message;
+        if (!empty($metadata)) {
+            $lines[] = '';
+            $lines = array_merge($lines, $metadata);
+        }
+
+        return implode("\n", $lines);
     }
 
+    /**
+     * Format upcoming deadline reminder message.
+     * MD3: Alert card pattern with urgency emphasis.
+     */
     private function formatUpcomingDeadlineMessage(Task $task, int $offset = 30): string
     {
-        $message = "⏰ *НАПОМИНАНИЕ О ДЕДЛАЙНЕ*\n\n📌 *{$task->title}*\n\n";
+        $lines = [];
 
+        // Alert header (MD3 elevated card header)
+        $lines[] = "⏰ *НАПОМИНАНИЕ*";
+        $lines[] = '';
+
+        // Task title
+        $lines[] = "📌 *{$task->title}*";
+
+        // Description
         if ($task->description) {
-            $message .= "{$task->description}\n\n";
+            $lines[] = '';
+            $lines[] = $task->description;
         }
 
+        // Comment
         if ($task->comment) {
-            $message .= "💬 Комментарий: {$task->comment}\n\n";
+            $lines[] = '';
+            $lines[] = "💬 {$task->comment}";
         }
 
-        $message .= "🚨 Дедлайн через {$offset} минут!\n";
-        $message .= "⏰ Время дедлайна: " . $task->deadline_for_bot . "\n";
+        // Urgency section (MD3 warning state)
+        $lines[] = '';
+        $timeText = $this->formatTimeOffset($offset);
+        $lines[] = "🚨 Дедлайн {$timeText}!";
+        $lines[] = "⏰ {$task->deadline_for_bot}";
 
+        // Tags
         if ($task->tags && is_array($task->tags) && !empty($task->tags)) {
-            $message .= "🏷️ Теги: " . implode(', ', $task->tags) . "\n";
+            $lines[] = '';
+            $lines[] = "🏷️ " . implode(' · ', $task->tags);
         }
 
-        return $message;
+        return implode("\n", $lines);
     }
 
+    /**
+     * Format overdue notification message.
+     * MD3: Error card pattern with critical emphasis.
+     */
     private function formatOverdueMessage(Task $task): string
     {
-        $message = "⚠️ *СРОК ВЫПОЛНЕНИЯ ИСТЁК*\n\n📌 *{$task->title}*\n\n";
+        $lines = [];
 
+        // Critical alert header (MD3 error state)
+        $lines[] = "⚠️ *СРОК ИСТЁК*";
+        $lines[] = '';
+
+        // Task title
+        $lines[] = "📌 *{$task->title}*";
+
+        // Description
         if ($task->description) {
-            $message .= "{$task->description}\n\n";
+            $lines[] = '';
+            $lines[] = $task->description;
         }
 
+        // Comment
         if ($task->comment) {
-            $message .= "💬 Комментарий: {$task->comment}\n\n";
+            $lines[] = '';
+            $lines[] = "💬 {$task->comment}";
         }
 
-        $message .= "🚨 Дедлайн был: " . $task->deadline_for_bot . "\n";
-        $message .= "⏱️ Просрочено на: " . $this->getOverdueTime($task->deadline) . "\n";
+        // Overdue details
+        $lines[] = '';
+        $lines[] = "🚨 Дедлайн был: {$task->deadline_for_bot}";
+        $lines[] = "⏱️ Просрочено: {$this->getOverdueTime($task->deadline)}";
 
+        // Tags
         if ($task->tags && is_array($task->tags) && !empty($task->tags)) {
-            $message .= "🏷️ Теги: " . implode(', ', $task->tags) . "\n";
+            $lines[] = '';
+            $lines[] = "🏷️ " . implode(' · ', $task->tags);
         }
 
-        return $message;
+        return implode("\n", $lines);
     }
 
+    /**
+     * Format hour overdue notification message.
+     * MD3: Critical alert card with maximum emphasis.
+     */
     private function formatHourOverdueMessage(Task $task, int $offset = 60): string
     {
-        $message = "🚨 *ЗАДАЧА ПРОСРОЧЕНА НА " . ($offset >= 60 ? round($offset/60, 1) . " ЧАС(А)" : "{$offset} МИНУТ") . "*\n\n📌 *{$task->title}*\n\n";
+        $lines = [];
 
+        // Critical header with time indicator
+        $overdueText = $offset >= 60
+            ? round($offset / 60, 1) . ' ' . $this->pluralize((int) round($offset / 60), 'час', 'часа', 'часов')
+            : $offset . ' ' . $this->pluralize($offset, 'минута', 'минуты', 'минут');
+
+        $lines[] = "🚨 *ПРОСРОЧЕНО: {$overdueText}*";
+        $lines[] = '';
+
+        // Task title
+        $lines[] = "📌 *{$task->title}*";
+
+        // Description
         if ($task->description) {
-            $message .= "{$task->description}\n\n";
+            $lines[] = '';
+            $lines[] = $task->description;
         }
 
+        // Comment
         if ($task->comment) {
-            $message .= "💬 Комментарий: {$task->comment}\n\n";
+            $lines[] = '';
+            $lines[] = "💬 {$task->comment}";
         }
 
-        $message .= "🚨 Дедлайн был: " . $task->deadline_for_bot . "\n";
-        $message .= "⏱️ Просрочено на: " . $this->getOverdueTime($task->deadline) . "\n";
-        $message .= "❗️ Срочно выполните задачу!\n";
+        // Overdue details with call to action
+        $lines[] = '';
+        $lines[] = "⏰ Дедлайн был: {$task->deadline_for_bot}";
+        $lines[] = "⏱️ Просрочено: {$this->getOverdueTime($task->deadline)}";
+        $lines[] = '';
+        $lines[] = "❗ Требуется немедленное выполнение";
 
+        // Tags
         if ($task->tags && is_array($task->tags) && !empty($task->tags)) {
-            $message .= "🏷️ Теги: " . implode(', ', $task->tags) . "\n";
+            $lines[] = '';
+            $lines[] = "🏷️ " . implode(' · ', $task->tags);
         }
 
-        return $message;
+        return implode("\n", $lines);
     }
 
-    private function getTaskKeyboard(Task $task): ?\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup
+    /**
+     * Format time offset for display.
+     * MD3: Relative time formatting.
+     */
+    private function formatTimeOffset(int $minutes): string
+    {
+        if ($minutes >= 60) {
+            $hours = floor($minutes / 60);
+            $mins = $minutes % 60;
+            $text = "через {$hours} " . $this->pluralize((int) $hours, 'час', 'часа', 'часов');
+            if ($mins > 0) {
+                $text .= " {$mins} " . $this->pluralize($mins, 'минуту', 'минуты', 'минут');
+            }
+            return $text;
+        }
+        return "через {$minutes} " . $this->pluralize($minutes, 'минуту', 'минуты', 'минут');
+    }
+
+    /**
+     * Get task response keyboard.
+     * MD3: Action buttons following button guidelines.
+     */
+    private function buildTaskKeyboard(Task $task): ?\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup
     {
         return match ($task->response_type) {
-            'acknowledge' => \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
-                ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                    text: '✅ OK',
-                    callback_data: 'task_ok_' . $task->id
-                )),
-            'complete' => \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
-                ->addRow(
-                    \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                        text: '✅ Выполнено',
-                        callback_data: 'task_done_' . $task->id
-                    )
-                ),
+            'acknowledge' => static::taskAcknowledgeButton($task->id),
+            'complete' => static::taskCompleteButton($task->id),
             default => null,
         };
     }

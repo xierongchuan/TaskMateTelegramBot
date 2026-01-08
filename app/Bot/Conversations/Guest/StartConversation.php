@@ -7,25 +7,41 @@ namespace App\Bot\Conversations\Guest;
 use App\Bot\Abstracts\BaseConversation;
 use App\Enums\Role;
 use App\Models\User;
+use App\Traits\MaterialDesign3Trait;
 use SergiX44\Nutgram\Nutgram;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Conversation for user authentication via phone number.
  * Users must be pre-registered through API endpoints.
+ *
+ * Implements Material Design 3 principles:
+ * - Clear visual hierarchy in messages
+ * - Semantic iconography for actions
+ * - Personalized greeting patterns
  */
-
 class StartConversation extends BaseConversation
 {
+    use MaterialDesign3Trait;
+
     protected ?string $step = 'askContact';
 
     /**
      * Ask for user contact for authentication.
+     * MD3: Form input pattern with clear instructions.
      */
     public function askContact(Nutgram $bot)
     {
+        $message = implode("\n", [
+            '🔐 *Вход в систему*',
+            '',
+            'Для входа поделитесь номером телефона.',
+            '',
+            'ℹ️ Аккаунт должен быть создан администратором.',
+        ]);
+
         $bot->sendMessage(
-            text: '🔐 *Вход в систему*\\n\\nДля входа пожалуйста, поделитесь своим номером телефона:\\n\\nℹ️ *Важно:* Ваш аккаунт должен быть предварительно создан администратором.',
+            text: $message,
             reply_markup: static::contactRequestKeyboard(),
             parse_mode: 'markdown'
         );
@@ -35,6 +51,7 @@ class StartConversation extends BaseConversation
 
     /**
      * Process contact and authenticate user.
+     * MD3: Form validation with clear feedback.
      */
     public function getContact(Nutgram $bot)
     {
@@ -43,7 +60,7 @@ class StartConversation extends BaseConversation
 
             if (!$contact?->phone_number) {
                 $bot->sendMessage(
-                    '❌ Не удалось получить номер телефона. Пожалуйста, попробуйте ещё раз.',
+                    '❌ Номер не получен. Попробуйте ещё раз.',
                     reply_markup: static::contactRequestKeyboard()
                 );
                 $this->next('getContact');
@@ -54,7 +71,7 @@ class StartConversation extends BaseConversation
             if (!$telegramUserId) {
                 Log::error('Не удалось получить Telegram ID для пользователя');
                 $bot->sendMessage(
-                    '❌ Произошла ошибка. Пожалуйста, попробуйте ещё раз.',
+                    '❌ Ошибка авторизации. Попробуйте ещё раз.',
                     reply_markup: static::removeKeyboard()
                 );
                 $this->end();
@@ -67,7 +84,7 @@ class StartConversation extends BaseConversation
 
             if (!$this->isValidPhoneNumber($normalizedPhone)) {
                 $bot->sendMessage(
-                    '❌ Неверный формат номера телефона. Пожалуйста, используйте корректный номер.',
+                    '❌ Неверный формат номера. Используйте корректный номер.',
                     reply_markup: static::contactRequestKeyboard()
                 );
                 $this->next('getContact');
@@ -91,8 +108,17 @@ class StartConversation extends BaseConversation
                         'new_phone' => $phoneNumber
                     ]);
 
+                    $message = implode("\n", [
+                        '⚠️ *Аккаунт привязан*',
+                        '',
+                        'Этот Telegram привязан к номеру:',
+                        $existingTelegramUser->phone,
+                        '',
+                        'Свяжитесь с администратором.',
+                    ]);
+
                     $bot->sendMessage(
-                        '⚠️ Этот Telegram аккаунт уже привязан к другому номеру телефона (' . $existingTelegramUser->phone . ').\\n\\nПожалуйста, свяжитесь с администратором для решения этой проблемы.',
+                        $message,
                         reply_markup: static::removeKeyboard(),
                         parse_mode: 'markdown'
                     );
@@ -114,8 +140,18 @@ class StartConversation extends BaseConversation
                     'phone' => $phoneNumber
                 ]);
 
+                $message = implode("\n", [
+                    '❌ *Аккаунт не найден*',
+                    '',
+                    'Номер не зарегистрирован в системе.',
+                    '',
+                    '📞 Свяжитесь с администратором',
+                    '• Предоставьте номер телефона',
+                    '• Войдите после создания аккаунта',
+                ]);
+
                 $bot->sendMessage(
-                    '❌ *Аккаунт не найден*\\n\\nВаш номер телефона не найден в нашей системе.\\n\\n📞 *Свяжитесь с администратором* для создания учетной записи:\\n• Предоставьте свой номер телефона\\n• После создания аккаунта попробуйте войти снова',
+                    $message,
                     reply_markup: static::removeKeyboard(),
                     parse_mode: 'markdown'
                 );
@@ -132,8 +168,16 @@ class StartConversation extends BaseConversation
                     'new_telegram_id' => $telegramUserId
                 ]);
 
+                $message = implode("\n", [
+                    '⚠️ *Номер уже привязан*',
+                    '',
+                    'Этот номер используется в другом Telegram.',
+                    '',
+                    'Свяжитесь с администратором.',
+                ]);
+
                 $bot->sendMessage(
-                    '⚠️ Этот номер телефона уже привязан к другому Telegram аккаунту.\\n\\nПожалуйста, свяжитесь с администратором для решения этой проблемы.',
+                    $message,
                     reply_markup: static::removeKeyboard(),
                     parse_mode: 'markdown'
                 );
@@ -158,6 +202,7 @@ class StartConversation extends BaseConversation
 
     /**
      * Handle successful user login.
+     * MD3: Success feedback with personalized greeting.
      */
     private function handleSuccessfulLogin(Nutgram $bot, User $user): void
     {
@@ -184,18 +229,27 @@ class StartConversation extends BaseConversation
 
     /**
      * Generate personalized welcome message.
+     * MD3: Expressive personalization with time-based greetings.
      */
     private function generateWelcomeMessage(User $user, string $roleLabel): string
     {
-        $greeting = match(date('H')) {
-            0, 1, 2, 3, 4, 5 => '🌙 Доброй ночи',
-            6, 7, 8, 9, 10, 11 => '☀️ Доброе утро',
-            12, 13, 14, 15, 16, 17 => '🌤️ Добрый день',
-            18, 19, 20, 21 => '🌆 Добрый вечер',
-            default => '👋 Добро пожаловать'
+        $hour = (int) date('H');
+
+        // MD3 time-based greeting with expressive icons
+        $greeting = match (true) {
+            $hour >= 5 && $hour < 12 => ['🌅', 'Доброе утро'],
+            $hour >= 12 && $hour < 17 => ['☀️', 'Добрый день'],
+            $hour >= 17 && $hour < 22 => ['🌆', 'Добрый вечер'],
+            default => ['🌙', 'Доброй ночи'],
         };
 
-        return "{$greeting}, {$roleLabel} *{$user->full_name}*!\\n\\n✅ Вы успешно вошли в систему.\\n\\nВыберите действие в меню ниже:";
+        return implode("\n", [
+            "{$greeting[0]} {$greeting[1]}, *{$user->full_name}*!",
+            '',
+            "✅ Вход выполнен · {$roleLabel}",
+            '',
+            'Выберите действие:',
+        ]);
     }
 
     /**

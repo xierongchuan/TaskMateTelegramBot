@@ -7,13 +7,17 @@ namespace App\Bot\Commands\Manager;
 use App\Bot\Abstracts\BaseCommandHandler;
 use App\Models\User;
 use App\Models\Task;
+use App\Traits\MaterialDesign3Trait;
 use SergiX44\Nutgram\Nutgram;
 
 /**
- * Command for managers to view tasks
+ * Command for managers to view tasks.
+ * MD3: Task list with status summary chips.
  */
 class ViewTasksCommand extends BaseCommandHandler
 {
+    use MaterialDesign3Trait;
+
     protected string $command = 'viewtasks';
     protected ?string $description = 'Просмотр задач';
 
@@ -30,13 +34,16 @@ class ViewTasksCommand extends BaseCommandHandler
             ->take(10)
             ->get();
 
-        $message = "📋 *Задачи*\n\n";
+        $lines = [];
+        $lines[] = '📋 *Задачи*';
 
         if ($tasks->isEmpty()) {
-            $message .= "Нет активных задач.\n";
+            $lines[] = '';
+            $lines[] = 'Нет активных задач';
         } else {
             foreach ($tasks as $task) {
-                $message .= "*{$task->title}*\n";
+                $lines[] = '';
+                $lines[] = "*{$task->title}*";
 
                 // Count statuses
                 $completed = 0;
@@ -59,12 +66,13 @@ class ViewTasksCommand extends BaseCommandHandler
                 }
 
                 $total = $task->assignments->count();
-                $message .= "Назначено: {$total} | ✅ {$completed} | 👁️ {$acknowledged} | ⏸️ {$pending}\n\n";
+                $lines[] = "👥 {$total} · ✅ {$completed} · 👁️ {$acknowledged} · ⏳ {$pending}";
             }
         }
 
-        $message .= "💡 Для управления задачами используйте веб-админку.";
+        $lines[] = '';
+        $lines[] = '💡 Управление в веб-админке';
 
-        $bot->sendMessage($message, parse_mode: 'Markdown');
+        $bot->sendMessage(implode("\n", $lines), parse_mode: 'Markdown');
     }
 }

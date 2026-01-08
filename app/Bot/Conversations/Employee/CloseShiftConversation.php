@@ -9,21 +9,30 @@ use App\Models\Shift;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\ShiftService;
+use App\Traits\MaterialDesign3Trait;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use SergiX44\Nutgram\Nutgram;
 
 /**
- * Conversation for closing a shift with photo upload and task logging
+ * Conversation for closing a shift with photo upload and task logging.
+ *
+ * Implements Material Design 3 principles:
+ * - Step-by-step dialog with progress indicators
+ * - Clear status feedback cards
+ * - Semantic messaging patterns
  */
 class CloseShiftConversation extends BaseConversation
 {
+    use MaterialDesign3Trait;
+
     protected ?string $photoPath = null;
     protected ?Shift $shift = null;
 
     /**
-     * Start: Check for open shift and request photo
+     * Start: Check for open shift and request photo.
+     * MD3: Status card with current shift info.
      */
     public function start(Nutgram $bot): void
     {
@@ -34,7 +43,7 @@ class CloseShiftConversation extends BaseConversation
             // Validate user belongs to a dealership
             if (!$shiftService->validateUserDealership($user)) {
                 $bot->sendMessage(
-                    '⚠️ Вы не привязаны к дилерскому центру. Обратитесь к администратору.',
+                    '⚠️ Не привязаны к салону. Обратитесь к администратору.',
                     reply_markup: static::employeeMenu()
                 );
                 $this->end();
@@ -45,31 +54,30 @@ class CloseShiftConversation extends BaseConversation
             $openShift = $shiftService->getUserOpenShift($user);
 
             if (!$openShift) {
-                $bot->sendMessage('⚠️ У вас нет открытой смены.', reply_markup: static::employeeMenu());
+                $bot->sendMessage('⚠️ Нет открытой смены', reply_markup: static::employeeMenu());
                 $this->end();
                 return;
             }
 
             $this->shift = $openShift;
 
-            // Show shift info before requesting photo
-            $message = "🕐 Текущая смена открыта в " . $openShift->shift_start->format('H:i d.m.Y') . "\n\n";
+            // Build shift info message with MD3 card pattern
+            $lines = [];
+            $lines[] = '🔒 *Закрытие смены*';
+            $lines[] = '';
+            $lines[] = '🕐 Открыта: ' . $openShift->shift_start->format('H:i d.m.Y');
+
             if ($openShift->status === 'late') {
-                $message .= "⚠️ Смена открыта с опозданием на {$openShift->late_minutes} минут.\n\n";
+                $lines[] = '⚠️ Опоздание: ' . $openShift->late_minutes . ' мин.';
             }
-            $message .= "📸 Пожалуйста, загрузите фото экрана компьютера с текущим временем для закрытия смены.";
+
+            $lines[] = '';
+            $lines[] = '📷 Загрузите фото экрана.';
 
             $bot->sendMessage(
-                $message,
-                reply_markup: \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
-                    ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                        text: '⏭️ Пропустить фото',
-                        callback_data: 'skip_photo'
-                    ))
-                    ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                        text: '❌ Отменить',
-                        callback_data: 'cancel'
-                    ))
+                implode("\n", $lines),
+                parse_mode: 'markdown',
+                reply_markup: static::photoUploadKeyboard('skip_photo', 'cancel')
             );
 
             $this->next('handlePhoto');
@@ -79,7 +87,8 @@ class CloseShiftConversation extends BaseConversation
     }
 
     /**
-     * Handle photo upload
+     * Handle photo upload.
+     * MD3: Validation with clear next step.
      */
     public function handlePhoto(Nutgram $bot): void
     {
@@ -94,7 +103,7 @@ class CloseShiftConversation extends BaseConversation
             // Handle cancel button
             if ($bot->callbackQuery() && $bot->callbackQuery()->data === 'cancel') {
                 $bot->answerCallbackQuery();
-                $bot->sendMessage('❌ Закрытие смены отменено.', reply_markup: static::employeeMenu());
+                $bot->sendMessage('❌ Отменено', reply_markup: static::employeeMenu());
                 $this->end();
                 return;
             }
@@ -103,17 +112,8 @@ class CloseShiftConversation extends BaseConversation
 
             if (!$photo || empty($photo)) {
                 $bot->sendMessage(
-                    '⚠️ Пожалуйста, отправьте фото.\n\n' .
-                    'Или нажмите кнопку "Пропустить фото" или "Отменить".',
-                    reply_markup: \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
-                        ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                            text: '⏭️ Пропустить фото',
-                            callback_data: 'skip_photo'
-                        ))
-                        ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                            text: '❌ Отменить',
-                            callback_data: 'cancel'
-                        ))
+                    '⚠️ Отправьте фото или пропустите.',
+                    reply_markup: static::photoUploadKeyboard('skip_photo', 'cancel')
                 );
                 $this->next('handlePhoto');
                 return;
@@ -141,7 +141,7 @@ class CloseShiftConversation extends BaseConversation
             // Store as UploadedFile for compatibility with ShiftService
             $this->photoPath = $tempPath;
 
-            $bot->sendMessage('✅ Фото получено. Закрываю смену...');
+            $bot->sendMessage('✓ Фото получено. Закрываем смену...');
 
             $this->closeShift($bot);
         } catch (\Throwable $e) {
@@ -150,7 +150,8 @@ class CloseShiftConversation extends BaseConversation
     }
 
     /**
-     * Close the shift using ShiftService
+     * Close the shift using ShiftService.
+     * MD3: Success card with summary statistics.
      */
     private function closeShift(Nutgram $bot): void
     {
@@ -159,7 +160,7 @@ class CloseShiftConversation extends BaseConversation
             $shiftService = app(ShiftService::class);
 
             if (!$this->shift) {
-                $bot->sendMessage('⚠️ Ошибка: смена не найдена.', reply_markup: static::employeeMenu());
+                $bot->sendMessage('⚠️ Смена не найдена', reply_markup: static::employeeMenu());
                 $this->end();
                 return;
             }
@@ -181,7 +182,7 @@ class CloseShiftConversation extends BaseConversation
             // Use ShiftService to close the shift
             $shift = $shiftService->getUserOpenShift($user);
             if (!$shift) {
-                $bot->sendMessage('У вас нет открытой смены.');
+                $bot->sendMessage('⚠️ Нет открытой смены');
                 return;
             }
             $updatedShift = $shiftService->closeShift($shift, $closingPhoto);
@@ -196,9 +197,16 @@ class CloseShiftConversation extends BaseConversation
             $hours = floor($duration / 60);
             $minutes = $duration % 60;
 
-            $message = '✅ Смена закрыта в ' . $now->format('H:i d.m.Y') . "\n\n";
-            $message .= "🕐 Продолжительность: {$hours}ч {$minutes}м\n";
-            $message .= "📊 Статус: " . ($updatedShift->status === 'late' ? 'Опоздание' : 'Нормально') . "\n";
+            // Build success message with MD3 card pattern
+            $lines = [];
+            $lines[] = '✅ *Смена закрыта*';
+            $lines[] = '🕐 ' . $now->format('H:i d.m.Y');
+            $lines[] = '';
+            $lines[] = "⏱️ Продолжительность: {$hours}ч {$minutes}м";
+
+            if ($updatedShift->status === 'late') {
+                $lines[] = '⚠️ Было опоздание';
+            }
 
             // Find incomplete tasks using dealership context
             $incompleteTasks = Task::whereHas('assignments', function ($query) use ($user) {
@@ -218,24 +226,28 @@ class CloseShiftConversation extends BaseConversation
                 ->get();
 
             if ($incompleteTasks->isNotEmpty()) {
-                $message .= "\n\n⚠️ *Незавершённых задач: " . $incompleteTasks->count() . "*\n\n";
+                $count = $incompleteTasks->count();
+                $taskWord = $this->pluralizeRu($count, 'задача', 'задачи', 'задач');
+                $lines[] = '';
+                $lines[] = "⚠️ *Незавершено: {$count} {$taskWord}*";
 
-                // Log incomplete tasks
+                // List incomplete tasks
                 foreach ($incompleteTasks as $task) {
-                    $message .= "• {$task->title}";
+                    $taskLine = "• {$task->title}";
                     if ($task->deadline) {
-                        $message .= " (Дедлайн: " . $task->deadline->format('d.m H:i') . ")";
+                        $taskLine .= " ⏰ {$task->deadline->format('d.m H:i')}";
                     }
-                    $message .= "\n";
+                    $lines[] = $taskLine;
                 }
 
                 // Notify managers about incomplete tasks
                 $this->notifyManagersAboutIncompleteTasks($bot, $user, $incompleteTasks);
             } else {
-                $message .= "\n\n✅ Все задачи выполнены!";
+                $lines[] = '';
+                $lines[] = '✅ Все задачи выполнены';
             }
 
-            $bot->sendMessage($message, parse_mode: 'Markdown', reply_markup: static::employeeMenu());
+            $bot->sendMessage(implode("\n", $lines), parse_mode: 'Markdown', reply_markup: static::employeeMenu());
 
             \Illuminate\Support\Facades\Log::info(
                 "Shift closed by user #{$user->id} in dealership #{$this->shift->dealership_id}, " .
@@ -253,7 +265,8 @@ class CloseShiftConversation extends BaseConversation
     }
 
     /**
-     * Notify managers about incomplete tasks when shift closes
+     * Notify managers about incomplete tasks when shift closes.
+     * MD3: Alert notification to managers.
      */
     private function notifyManagersAboutIncompleteTasks(Nutgram $bot, User $user, $incompleteTasks): void
     {
@@ -265,23 +278,28 @@ class CloseShiftConversation extends BaseConversation
                 ->get();
 
             foreach ($managers as $manager) {
-                $message = "⚠️ *Смена закрыта с незавершёнными задачами*\n\n";
-                $message .= "👤 Сотрудник: {$user->full_name}\n";
-                $message .= "🕐 Время закрытия: " . Carbon::now()->format('H:i d.m.Y') . "\n";
-                $message .= "📋 Незавершённых задач: {$incompleteTasks->count()}\n\n";
-                $message .= "*Список незавершённых задач:*\n";
+                $count = $incompleteTasks->count();
+                $taskWord = $this->pluralizeRu($count, 'задача', 'задачи', 'задач');
+
+                $lines = [];
+                $lines[] = '⚠️ *Незавершённые задачи*';
+                $lines[] = '';
+                $lines[] = "👤 {$user->full_name}";
+                $lines[] = '🕐 ' . Carbon::now()->format('H:i d.m.Y');
+                $lines[] = '';
+                $lines[] = "*{$count} {$taskWord}:*";
 
                 foreach ($incompleteTasks as $task) {
-                    $message .= "• {$task->title}";
+                    $taskLine = "• {$task->title}";
                     if ($task->deadline) {
-                        $message .= " (⏰ {$task->deadline->format('d.m H:i')})";
+                        $taskLine .= " ⏰ {$task->deadline->format('d.m H:i')}";
                     }
-                    $message .= "\n";
+                    $lines[] = $taskLine;
                 }
 
                 try {
                     $bot->sendMessage(
-                        text: $message,
+                        text: implode("\n", $lines),
                         chat_id: $manager->telegram_id,
                         parse_mode: 'Markdown'
                     );

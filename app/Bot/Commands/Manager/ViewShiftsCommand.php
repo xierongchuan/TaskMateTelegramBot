@@ -7,14 +7,18 @@ namespace App\Bot\Commands\Manager;
 use App\Bot\Abstracts\BaseCommandHandler;
 use App\Models\User;
 use App\Models\Shift;
+use App\Traits\MaterialDesign3Trait;
 use SergiX44\Nutgram\Nutgram;
 use Carbon\Carbon;
 
 /**
- * Command for managers to view shifts
+ * Command for managers to view shifts.
+ * MD3: List presentation with status indicators.
  */
 class ViewShiftsCommand extends BaseCommandHandler
 {
+    use MaterialDesign3Trait;
+
     protected string $command = 'viewshifts';
     protected ?string $description = 'Просмотр смен';
 
@@ -37,33 +41,37 @@ class ViewShiftsCommand extends BaseCommandHandler
             ->with('user')
             ->get();
 
-        $message = "📊 *Смены сегодня*\n\n";
+        $lines = [];
+        $lines[] = '📊 *Смены сегодня*';
 
         if ($todayShifts->isEmpty() && $completedShifts->isEmpty()) {
-            $message .= "Нет смен на сегодня.\n";
+            $lines[] = '';
+            $lines[] = 'Нет смен на сегодня';
         } else {
             if ($todayShifts->isNotEmpty()) {
-                $message .= "*Активные смены:*\n";
+                $lines[] = '';
+                $lines[] = '*Активные:*';
                 foreach ($todayShifts as $shift) {
                     $startTime = $shift->actual_start->format('H:i');
-                    $status = $shift->status === 'late' ? '🔴 Опоздание' : '🟢 Вовремя';
-                    $message .= "• {$shift->user->name} ({$startTime}) - {$status}\n";
+                    $status = $shift->status === 'late' ? '🔴' : '🟢';
+                    $lines[] = "{$status} {$shift->user->name} · {$startTime}";
                 }
-                $message .= "\n";
             }
 
             if ($completedShifts->isNotEmpty()) {
-                $message .= "*Завершённые смены:*\n";
+                $lines[] = '';
+                $lines[] = '*Завершённые:*';
                 foreach ($completedShifts as $shift) {
                     $startTime = $shift->actual_start->format('H:i');
-                    $endTime = $shift->actual_end?->format('H:i') ?? 'N/A';
-                    $message .= "• {$shift->user->name} ({$startTime} - {$endTime})\n";
+                    $endTime = $shift->actual_end?->format('H:i') ?? '—';
+                    $lines[] = "✓ {$shift->user->name} · {$startTime}–{$endTime}";
                 }
             }
         }
 
-        $message .= "\n💡 Для полного функционала используйте веб-админку.";
+        $lines[] = '';
+        $lines[] = '💡 Полный функционал в веб-админке';
 
-        $bot->sendMessage($message, parse_mode: 'Markdown');
+        $bot->sendMessage(implode("\n", $lines), parse_mode: 'Markdown');
     }
 }

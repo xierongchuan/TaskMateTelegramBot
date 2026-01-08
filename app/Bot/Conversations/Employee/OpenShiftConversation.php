@@ -9,23 +9,32 @@ use App\Models\Shift;
 use App\Models\User;
 use App\Models\ShiftReplacement;
 use App\Services\ShiftService;
+use App\Traits\MaterialDesign3Trait;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use SergiX44\Nutgram\Nutgram;
 
 /**
- * Conversation for opening a shift with photo upload and optional replacement
+ * Conversation for opening a shift with photo upload and optional replacement.
+ *
+ * Implements Material Design 3 principles:
+ * - Step-by-step dialog flow with clear progress
+ * - Semantic feedback for each action
+ * - Consistent iconography and messaging patterns
  */
 class OpenShiftConversation extends BaseConversation
 {
+    use MaterialDesign3Trait;
+
     protected ?string $photoPath = null;
     protected ?bool $isReplacement = null;
     protected ?int $replacedUserId = null;
     protected ?string $replacementReason = null;
 
     /**
-     * Start: Ask for photo of computer screen with current time
+     * Start: Ask for photo of computer screen with current time.
+     * MD3: Step-by-step dialog with clear instructions.
      */
     public function start(Nutgram $bot): void
     {
@@ -36,7 +45,7 @@ class OpenShiftConversation extends BaseConversation
             // Validate user belongs to a dealership
             if (!$shiftService->validateUserDealership($user)) {
                 $bot->sendMessage(
-                    '⚠️ Вы не привязаны к дилерскому центру. Обратитесь к администратору.'
+                    '⚠️ Не привязаны к салону. Обратитесь к администратору.'
                 );
                 $this->end();
                 return;
@@ -46,21 +55,26 @@ class OpenShiftConversation extends BaseConversation
             $openShift = $shiftService->getUserOpenShift($user);
 
             if ($openShift) {
-                $bot->sendMessage(
-                    '⚠️ У вас уже есть открытая смена с ' .
-                    $openShift->shift_start->format('H:i d.m.Y')
-                );
+                $message = implode("\n", [
+                    '⚠️ *Смена уже открыта*',
+                    '',
+                    '🕐 С ' . $openShift->shift_start->format('H:i d.m.Y'),
+                ]);
+                $bot->sendMessage($message, parse_mode: 'markdown');
                 $this->end();
                 return;
             }
 
+            $message = implode("\n", [
+                '📷 *Открытие смены*',
+                '',
+                'Загрузите фото экрана с текущим временем.',
+            ]);
+
             $bot->sendMessage(
-                '📸 Пожалуйста, загрузите фото экрана компьютера с текущим временем для открытия смены.',
-                reply_markup: static::inlineConfirmDecline('skip_photo', 'cancel')
-                    ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                        text: '❌ Отменить',
-                        callback_data: 'cancel'
-                    ))
+                $message,
+                parse_mode: 'markdown',
+                reply_markup: static::photoUploadKeyboard('skip_photo', 'cancel')
             );
 
             $this->next('handlePhoto');
@@ -70,15 +84,28 @@ class OpenShiftConversation extends BaseConversation
     }
 
     /**
-     * Handle photo upload
+     * Handle photo upload.
+     * MD3: Validation feedback with next step guidance.
      */
     public function handlePhoto(Nutgram $bot): void
     {
         try {
+            // Handle skip button
+            if ($bot->callbackQuery() && $bot->callbackQuery()->data === 'skip_photo') {
+                $bot->answerCallbackQuery();
+                // Ask replacement question without photo
+                $bot->sendMessage(
+                    '❓ Вы заменяете другого сотрудника?',
+                    reply_markup: static::yesNoKeyboard()
+                );
+                $this->next('handleReplacementQuestion');
+                return;
+            }
+
             // Handle cancel button
             if ($bot->callbackQuery() && $bot->callbackQuery()->data === 'cancel') {
                 $bot->answerCallbackQuery();
-                $bot->sendMessage('❌ Открытие смены отменено.', reply_markup: static::employeeMenu());
+                $bot->sendMessage('❌ Отменено', reply_markup: static::employeeMenu());
                 $this->end();
                 return;
             }
@@ -87,9 +114,8 @@ class OpenShiftConversation extends BaseConversation
 
             if (!$photo || empty($photo)) {
                 $bot->sendMessage(
-                    '⚠️ Пожалуйста, отправьте фото.\n\n' .
-                    'Или нажмите кнопку "Отменить" для выхода.',
-                    reply_markup: static::inlineConfirmDecline('skip_photo', 'cancel')
+                    '⚠️ Отправьте фото или пропустите.',
+                    reply_markup: static::photoUploadKeyboard('skip_photo', 'cancel')
                 );
                 $this->next('handlePhoto');
                 return;
@@ -119,9 +145,9 @@ class OpenShiftConversation extends BaseConversation
 
             // Ask if replacing another employee
             $bot->sendMessage(
-                '✅ Фото получено.\n\n' .
+                '✅ Фото получено' . "\n\n" .
                 '❓ Вы заменяете другого сотрудника?',
-                reply_markup: static::yesNoKeyboard('Да', 'Нет')
+                reply_markup: static::yesNoKeyboard()
             );
 
             $this->next('handleReplacementQuestion');
@@ -131,7 +157,8 @@ class OpenShiftConversation extends BaseConversation
     }
 
     /**
-     * Handle replacement question
+     * Handle replacement question.
+     * MD3: Binary choice dialog with clear navigation.
      */
     public function handleReplacementQuestion(Nutgram $bot): void
     {
@@ -140,8 +167,8 @@ class OpenShiftConversation extends BaseConversation
             if ($bot->callbackQuery()) {
                 $bot->answerCallbackQuery();
                 $bot->sendMessage(
-                    '⚠️ Пожалуйста, используйте кнопки ниже для ответа.',
-                    reply_markup: static::yesNoKeyboard('Да', 'Нет')
+                    '⚠️ Используйте кнопки ниже.',
+                    reply_markup: static::yesNoKeyboard()
                 );
                 $this->next('handleReplacementQuestion');
                 return;
@@ -151,14 +178,15 @@ class OpenShiftConversation extends BaseConversation
 
             if (!$answer) {
                 $bot->sendMessage(
-                    '⚠️ Пожалуйста, выберите "Да" или "Нет"',
-                    reply_markup: static::yesNoKeyboard('Да', 'Нет')
+                    '⚠️ Выберите ответ',
+                    reply_markup: static::yesNoKeyboard()
                 );
                 $this->next('handleReplacementQuestion');
                 return;
             }
 
-            if ($answer === 'Да') {
+            // Check for yes variants (with or without checkmark)
+            if ($answer === '✓ Да' || $answer === 'Да') {
                 $this->isReplacement = true;
 
                 // Get list of employees from same dealership
@@ -170,46 +198,36 @@ class OpenShiftConversation extends BaseConversation
 
                 if ($employees->isEmpty()) {
                     $bot->sendMessage(
-                        '⚠️ Не найдено других сотрудников в вашем салоне.',
+                        '⚠️ Нет других сотрудников в салоне.',
                         reply_markup: static::removeKeyboard()
                     );
                     $this->createShift($bot);
                     return;
                 }
 
-                // Create inline keyboard with employee list
-                $buttons = [];
-                foreach ($employees as $employee) {
-                    $buttons[] = [
-                        \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                            text: $employee->full_name,
-                            callback_data: 'employee_' . $employee->id
-                        )
-                    ];
-                }
-
-                $keyboard = \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make();
-                foreach ($buttons as $row) {
-                    $keyboard->addRow(...$row);
-                }
+                // Create employee list for selection keyboard
+                $employeeList = $employees->map(fn($e) => [
+                    'id' => $e->id,
+                    'name' => $e->full_name
+                ])->toArray();
 
                 // First remove the reply keyboard, then show inline keyboard
-                $bot->sendMessage('✅ Понятно', reply_markup: static::removeKeyboard());
+                $bot->sendMessage('✓', reply_markup: static::removeKeyboard());
                 $bot->sendMessage(
-                    '👤 Выберите сотрудника, которого вы заменяете:',
-                    reply_markup: $keyboard
+                    '👤 Кого заменяете?',
+                    reply_markup: static::employeeSelectionKeyboard($employeeList)
                 );
 
                 $this->next('handleEmployeeSelection');
             } elseif ($answer === 'Нет') {
                 $this->isReplacement = false;
                 // Remove the reply keyboard before creating shift
-                $bot->sendMessage('✅ Понятно, открываем смену...', reply_markup: static::removeKeyboard());
+                $bot->sendMessage('✓ Открываем смену...', reply_markup: static::removeKeyboard());
                 $this->createShift($bot);
             } else {
                 $bot->sendMessage(
-                    '⚠️ Пожалуйста, выберите "Да" или "Нет"',
-                    reply_markup: static::yesNoKeyboard('Да', 'Нет')
+                    '⚠️ Выберите ответ',
+                    reply_markup: static::yesNoKeyboard()
                 );
                 $this->next('handleReplacementQuestion');
             }
@@ -219,7 +237,8 @@ class OpenShiftConversation extends BaseConversation
     }
 
     /**
-     * Handle employee selection
+     * Handle employee selection.
+     * MD3: List selection with feedback.
      */
     public function handleEmployeeSelection(Nutgram $bot): void
     {
@@ -227,16 +246,16 @@ class OpenShiftConversation extends BaseConversation
             $callbackData = $bot->callbackQuery()?->data;
 
             if (!$callbackData || !str_starts_with($callbackData, 'employee_')) {
-                $bot->sendMessage('⚠️ Ошибка выбора сотрудника. Попробуйте снова.');
+                $bot->sendMessage('⚠️ Ошибка выбора. Попробуйте снова.');
                 $this->end();
                 return;
             }
 
             $this->replacedUserId = (int) str_replace('employee_', '', $callbackData);
 
-            $bot->answerCallbackQuery();
+            $bot->answerCallbackQuery('✓');
             $bot->sendMessage(
-                '✍️ Укажите причину замещения:',
+                '✍️ Укажите причину замены:',
                 reply_markup: static::removeKeyboard()
             );
 
@@ -247,7 +266,8 @@ class OpenShiftConversation extends BaseConversation
     }
 
     /**
-     * Handle replacement reason
+     * Handle replacement reason.
+     * MD3: Text input with validation.
      */
     public function handleReplacementReason(Nutgram $bot): void
     {
@@ -255,7 +275,7 @@ class OpenShiftConversation extends BaseConversation
             $reason = $bot->message()?->text;
 
             if (!$reason || trim($reason) === '') {
-                $bot->sendMessage('⚠️ Пожалуйста, укажите причину замещения.');
+                $bot->sendMessage('⚠️ Укажите причину замены.');
                 $this->next('handleReplacementReason');
                 return;
             }
@@ -269,7 +289,8 @@ class OpenShiftConversation extends BaseConversation
     }
 
     /**
-     * Create shift record using ShiftService
+     * Create shift record using ShiftService.
+     * MD3: Success card with comprehensive status display.
      */
     private function createShift(Nutgram $bot): void
     {
@@ -277,18 +298,17 @@ class OpenShiftConversation extends BaseConversation
             $user = $this->getAuthenticatedUser();
             $shiftService = app(ShiftService::class);
 
-            // Create UploadedFile from the temporary photo path
-            if (!$this->photoPath || !file_exists($this->photoPath)) {
-                throw new \RuntimeException('Photo file not found');
+            // Create UploadedFile from the temporary photo path if available
+            $uploadedFile = null;
+            if ($this->photoPath && file_exists($this->photoPath)) {
+                $uploadedFile = new UploadedFile(
+                    $this->photoPath,
+                    'shift_opening_photo.jpg',
+                    'image/jpeg',
+                    null,
+                    true
+                );
             }
-
-            $uploadedFile = new UploadedFile(
-                $this->photoPath,
-                'shift_opening_photo.jpg',
-                'image/jpeg',
-                null,
-                true
-            );
 
             // Get replacement user if needed
             $replacingUser = null;
@@ -297,9 +317,7 @@ class OpenShiftConversation extends BaseConversation
 
                 // Validate replacement user belongs to the same dealership
                 if (!$shiftService->validateUserDealership($replacingUser, $user->dealership_id)) {
-                    $bot->sendMessage(
-                        '⚠️ Выбранный сотрудник не принадлежит вашему дилерскому центру.'
-                    );
+                    $bot->sendMessage('⚠️ Сотрудник не из вашего салона.');
                     $this->end();
                     return;
                 }
@@ -314,29 +332,40 @@ class OpenShiftConversation extends BaseConversation
             );
 
             // Clean up temporary file
-            if (file_exists($this->photoPath)) {
+            if ($this->photoPath && file_exists($this->photoPath)) {
                 unlink($this->photoPath);
             }
 
-            // Send welcome message and tasks
+            // Build success message with MD3 card pattern
             $now = Carbon::now();
-            $message = "✅ Смена открыта в " . $now->format('H:i d.m.Y') . "\n\n";
-            $message .= "👋 Приветствие!\n\n";
+            $lines = [];
 
-            if ($this->isReplacement) {
-                $message .= "📝 Вы заменяете: {$replacingUser->full_name}\n";
-                $message .= "💬 Причина: {$this->replacementReason}\n\n";
-            }
+            // Success header
+            $lines[] = '✅ *Смена открыта*';
+            $lines[] = '🕐 ' . $now->format('H:i d.m.Y');
 
-            // Add shift status information
+            // Late status warning
             if ($shift->status === 'late') {
-                $message .= "⚠️ Смена открыта с опозданием на {$shift->late_minutes} минут.\n\n";
+                $lines[] = '';
+                $lines[] = '⚠️ Опоздание: ' . $shift->late_minutes . ' ' .
+                    $this->pluralizeRu($shift->late_minutes, 'минута', 'минуты', 'минут');
             }
 
-            $message .= "🕐 Планируемое время: " . $shift->scheduled_start->format('H:i') . " - " .
-                       $shift->scheduled_end->format('H:i') . "\n\n";
+            // Replacement info
+            if ($this->isReplacement && $replacingUser) {
+                $lines[] = '';
+                $lines[] = '📝 Замена: ' . $replacingUser->full_name;
+                $lines[] = '💬 ' . $this->replacementReason;
+            }
 
-            $bot->sendMessage($message, reply_markup: static::employeeMenu());
+            // Schedule info
+            if ($shift->scheduled_start && $shift->scheduled_end) {
+                $lines[] = '';
+                $lines[] = '📅 График: ' . $shift->scheduled_start->format('H:i') . ' – ' .
+                    $shift->scheduled_end->format('H:i');
+            }
+
+            $bot->sendMessage(implode("\n", $lines), parse_mode: 'markdown', reply_markup: static::employeeMenu());
 
             // Send pending tasks
             $this->sendPendingTasks($bot, $user);
@@ -353,7 +382,8 @@ class OpenShiftConversation extends BaseConversation
 
 
     /**
-     * Send pending tasks to the employee
+     * Send pending tasks to the employee.
+     * MD3: List presentation with count summary.
      */
     private function sendPendingTasks(Nutgram $bot, User $user): void
     {
@@ -373,11 +403,13 @@ class OpenShiftConversation extends BaseConversation
             ->get();
 
             if ($tasks->isEmpty()) {
-                $bot->sendMessage('✅ У вас нет активных задач.');
+                $bot->sendMessage('✅ Нет активных задач');
                 return;
             }
 
-            $bot->sendMessage("📋 У вас {$tasks->count()} активных задач:");
+            $count = $tasks->count();
+            $taskWord = $this->pluralizeRu($count, 'задача', 'задачи', 'задач');
+            $bot->sendMessage("📋 *{$count} {$taskWord}*", parse_mode: 'markdown');
 
             foreach ($tasks as $task) {
                 $this->sendTaskNotification($bot, $task, $user);
@@ -388,42 +420,38 @@ class OpenShiftConversation extends BaseConversation
     }
 
     /**
-     * Send task notification
+     * Send task notification.
+     * MD3: Task card with action button.
      */
     private function sendTaskNotification(Nutgram $bot, \App\Models\Task $task, User $user): void
     {
-        $message = "📌 *{$task->title}*\n\n";
+        $lines = [];
 
+        // Title
+        $lines[] = "📌 *{$task->title}*";
+
+        // Description
         if ($task->description) {
-            $message .= "{$task->description}\n\n";
+            $lines[] = '';
+            $lines[] = $task->description;
         }
 
+        // Comment
         if ($task->comment) {
-            $message .= "💬 Комментарий: {$task->comment}\n\n";
+            $lines[] = '';
+            $lines[] = "💬 {$task->comment}";
         }
 
+        // Deadline
         if ($task->deadline) {
-            $message .= "⏰ Дедлайн: " . $task->deadline_for_bot . "\n";
+            $lines[] = '';
+            $lines[] = "⏰ Дедлайн: {$task->deadline_for_bot}";
         }
 
-        // Create response keyboard based on response_type
-        $keyboard = match ($task->response_type) {
-            'acknowledge' => \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
-                ->addRow(\SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                    text: '✅ OK',
-                    callback_data: 'task_ok_' . $task->id
-                )),
-            'complete' => \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
-                ->addRow(
-                    \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
-                        text: '✅ Выполнено',
-                        callback_data: 'task_done_' . $task->id
-                    )
-                ),
-            default => null,
-        };
+        // Get keyboard using trait method
+        $keyboard = static::getTaskKeyboard($task->response_type, $task->id);
 
-        $bot->sendMessage($message, parse_mode: 'Markdown', reply_markup: $keyboard);
+        $bot->sendMessage(implode("\n", $lines), parse_mode: 'Markdown', reply_markup: $keyboard);
     }
 
     /**

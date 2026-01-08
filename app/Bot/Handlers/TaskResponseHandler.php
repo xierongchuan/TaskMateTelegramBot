@@ -12,12 +12,18 @@ use Illuminate\Support\Facades\Log;
 use SergiX44\Nutgram\Nutgram;
 
 /**
- * Handler for task response callbacks (OK, Done)
+ * Handler for task response callbacks (OK, Done).
+ *
+ * MD3 Feedback patterns:
+ * - Immediate visual feedback via toast (answerCallbackQuery)
+ * - Button removal on success (clear completed action)
+ * - Error state with helpful guidance
  */
 class TaskResponseHandler
 {
     /**
-     * Handle task OK response (for notification-type tasks)
+     * Handle task OK response (for notification-type tasks).
+     * MD3: Acknowledge action with immediate feedback.
      */
     public static function handleOk(Nutgram $bot): void
     {
@@ -28,7 +34,7 @@ class TaskResponseHandler
             $user = auth()->user();
             if (!$user) {
                 Log::warning('Task OK callback: User not authenticated', ['callback_data' => $callbackData]);
-                $bot->answerCallbackQuery('⚠️ Ошибка аутентификации. Пожалуйста, войдите снова через /start', show_alert: true);
+                $bot->answerCallbackQuery('⚠️ Войдите через /start', show_alert: true);
                 return;
             }
 
@@ -42,7 +48,7 @@ class TaskResponseHandler
             // Check if task is active
             if (!$task->is_active) {
                 Log::info('Task OK callback: Task is not active', ['task_id' => $taskId, 'user_id' => $user->id]);
-                $bot->answerCallbackQuery('⚠️ Эта задача больше не активна', show_alert: true);
+                $bot->answerCallbackQuery('⚠️ Задача неактивна', show_alert: true);
                 return;
             }
 
@@ -54,7 +60,7 @@ class TaskResponseHandler
                     'user_id' => $user->id,
                     'task_title' => $task->title
                 ]);
-                $bot->answerCallbackQuery('⚠️ Вы не назначены на эту задачу', show_alert: true);
+                $bot->answerCallbackQuery('⚠️ Вы не назначены', show_alert: true);
                 return;
             }
 
@@ -64,7 +70,7 @@ class TaskResponseHandler
                 ->first();
 
             if ($existingResponse && $existingResponse->status === 'acknowledged') {
-                $bot->answerCallbackQuery('ℹ️ Вы уже ответили на эту задачу');
+                $bot->answerCallbackQuery('ℹ️ Уже отмечено');
                 return;
             }
 
@@ -80,7 +86,8 @@ class TaskResponseHandler
                 ]
             );
 
-            $bot->answerCallbackQuery('✅ Принято');
+            // MD3: Clear success feedback
+            $bot->answerCallbackQuery('✓ Принято');
             $bot->editMessageReplyMarkup(
                 chat_id: $bot->chatId(),
                 message_id: $bot->messageId(),
@@ -99,12 +106,13 @@ class TaskResponseHandler
                 'user_id' => auth()->user()?->id,
                 'callback_data' => $bot->callbackQuery()?->data
             ]);
-            $bot->answerCallbackQuery('⚠️ Произошла ошибка при обработке ответа', show_alert: true);
+            $bot->answerCallbackQuery('⚠️ Ошибка. Попробуйте ещё раз', show_alert: true);
         }
     }
 
     /**
-     * Handle task done response
+     * Handle task done response.
+     * MD3: Completion action with success feedback.
      */
     public static function handleDone(Nutgram $bot): void
     {
@@ -115,7 +123,7 @@ class TaskResponseHandler
             $user = auth()->user();
             if (!$user) {
                 Log::warning('Task Done callback: User not authenticated', ['callback_data' => $callbackData]);
-                $bot->answerCallbackQuery('⚠️ Ошибка аутентификации. Пожалуйста, войдите снова через /start', show_alert: true);
+                $bot->answerCallbackQuery('⚠️ Войдите через /start', show_alert: true);
                 return;
             }
 
@@ -129,7 +137,7 @@ class TaskResponseHandler
             // Check if task is active
             if (!$task->is_active) {
                 Log::info('Task Done callback: Task is not active', ['task_id' => $taskId, 'user_id' => $user->id]);
-                $bot->answerCallbackQuery('⚠️ Эта задача больше не активна', show_alert: true);
+                $bot->answerCallbackQuery('⚠️ Задача неактивна', show_alert: true);
                 return;
             }
 
@@ -141,7 +149,7 @@ class TaskResponseHandler
                     'user_id' => $user->id,
                     'task_title' => $task->title
                 ]);
-                $bot->answerCallbackQuery('⚠️ Вы не назначены на эту задачу', show_alert: true);
+                $bot->answerCallbackQuery('⚠️ Вы не назначены', show_alert: true);
                 return;
             }
 
@@ -152,7 +160,7 @@ class TaskResponseHandler
                     ->exists();
 
                 if ($alreadyCompleted) {
-                    $bot->answerCallbackQuery('ℹ️ Эта задача уже была выполнена другим сотрудником');
+                    $bot->answerCallbackQuery('ℹ️ Уже выполнено другим');
                     $bot->editMessageReplyMarkup(
                         chat_id: $bot->chatId(),
                         message_id: $bot->messageId(),
@@ -168,7 +176,7 @@ class TaskResponseHandler
                 ->first();
 
             if ($existingResponse && $existingResponse->status === 'completed') {
-                $bot->answerCallbackQuery('ℹ️ Вы уже отметили эту задачу как выполненную');
+                $bot->answerCallbackQuery('ℹ️ Уже отмечено');
                 return;
             }
 
@@ -184,7 +192,8 @@ class TaskResponseHandler
                 ]
             );
 
-            $bot->answerCallbackQuery('✅ Задача отмечена как выполненная');
+            // MD3: Success feedback
+            $bot->answerCallbackQuery('✓ Выполнено');
             $bot->editMessageReplyMarkup(
                 chat_id: $bot->chatId(),
                 message_id: $bot->messageId(),
@@ -205,7 +214,7 @@ class TaskResponseHandler
                 'user_id' => auth()->user()?->id,
                 'callback_data' => $bot->callbackQuery()?->data
             ]);
-            $bot->answerCallbackQuery('⚠️ Произошла ошибка при обработке ответа', show_alert: true);
+            $bot->answerCallbackQuery('⚠️ Ошибка. Попробуйте ещё раз', show_alert: true);
         }
     }
 }

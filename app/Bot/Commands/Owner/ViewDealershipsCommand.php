@@ -7,13 +7,17 @@ namespace App\Bot\Commands\Owner;
 use App\Bot\Abstracts\BaseCommandHandler;
 use App\Models\User;
 use App\Models\AutoDealership;
+use App\Traits\MaterialDesign3Trait;
 use SergiX44\Nutgram\Nutgram;
 
 /**
- * Command for owners to view dealerships
+ * Command for owners to view dealerships.
+ * MD3: Card list with location and stats.
  */
 class ViewDealershipsCommand extends BaseCommandHandler
 {
+    use MaterialDesign3Trait;
+
     protected string $command = 'viewdealerships';
     protected ?string $description = 'Просмотр салонов';
 
@@ -22,20 +26,25 @@ class ViewDealershipsCommand extends BaseCommandHandler
         // Get all dealerships
         $dealerships = AutoDealership::withCount('users')->get();
 
-        $message = "🏢 *Автосалоны*\n\n";
+        $lines = [];
+        $lines[] = '🏢 *Автосалоны*';
 
         if ($dealerships->isEmpty()) {
-            $message .= "Нет автосалонов в системе.\n";
+            $lines[] = '';
+            $lines[] = 'Нет салонов в системе';
         } else {
             foreach ($dealerships as $dealership) {
-                $message .= "*{$dealership->name}*\n";
-                $message .= "📍 {$dealership->address}\n";
-                $message .= "👥 Сотрудников: {$dealership->users_count}\n\n";
+                $lines[] = '';
+                $lines[] = "*{$dealership->name}*";
+                $lines[] = "📍 {$dealership->address}";
+                $lines[] = "👥 {$dealership->users_count} " .
+                    $this->pluralizeRu($dealership->users_count, 'сотрудник', 'сотрудника', 'сотрудников');
             }
         }
 
-        $message .= "💡 Для управления салонами используйте веб-админку.";
+        $lines[] = '';
+        $lines[] = '💡 Управление в веб-админке';
 
-        $bot->sendMessage($message, parse_mode: 'Markdown');
+        $bot->sendMessage(implode("\n", $lines), parse_mode: 'Markdown');
     }
 }
