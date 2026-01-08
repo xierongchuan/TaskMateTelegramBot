@@ -29,7 +29,6 @@ class TaskController extends Controller
         $hasDeadline = $request->query('has_deadline');
         $search = $request->query('search');
         $status = $request->query('status');
-        $recurrence = $request->query('recurrence');
         $priority = $request->query('priority');
         $dateRange = $request->query('date_range');
         $generatorId = $request->query('generator_id') !== null && $request->query('generator_id') !== '' ? (int) $request->query('generator_id') : null;
@@ -161,17 +160,6 @@ class TaskController extends Controller
                 } else {
                     $query->whereNull('deadline');
                 }
-            }
-        }
-
-        // Фильтрация по повторяемости
-        if ($recurrence) {
-            if ($recurrence === 'recurring') {
-                // Show only recurring tasks (daily, weekly, monthly)
-                $query->whereIn('recurrence', ['daily', 'weekly', 'monthly']);
-            } else {
-                // Show tasks with specific recurrence type
-                $query->where('recurrence', $recurrence);
             }
         }
 
