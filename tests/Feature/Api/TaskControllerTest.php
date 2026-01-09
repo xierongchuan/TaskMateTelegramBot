@@ -238,6 +238,78 @@ describe('Task API', function () {
         $response->assertStatus(422)
             ->assertJsonFragment(['message' => 'Такая задача уже существует (дубликат)']);
     });
+
+    it('updates task status to pending_review', function () {
+        // Arrange
+        $task = Task::factory()->create(['dealership_id' => $this->dealership->id]);
+        $user = User::factory()->create(['role' => Role::EMPLOYEE->value, 'dealership_id' => $this->dealership->id]);
+        \App\Models\TaskAssignment::create(['task_id' => $task->id, 'user_id' => $user->id]);
+
+        // Act
+        $response = $this->actingAs($this->manager, 'sanctum')
+            ->patchJson("/api/v1/tasks/{$task->id}/status", ['status' => 'pending_review']);
+
+        // Assert
+        $response->assertStatus(200);
+        expect($response->json('status'))->toBe('pending_review');
+    });
+
+    it('updates task status to completed', function () {
+        // Arrange
+        $task = Task::factory()->create([
+            'dealership_id' => $this->dealership->id,
+            'task_type' => 'individual'
+        ]);
+
+        // Act
+        $response = $this->actingAs($this->manager, 'sanctum')
+            ->patchJson("/api/v1/tasks/{$task->id}/status", ['status' => 'completed']);
+
+        // Assert
+        $response->assertStatus(200);
+        expect($response->json('status'))->toBe('completed');
+    });
+
+    it('resets task status to pending', function () {
+        // Arrange
+        $task = Task::factory()->create(['dealership_id' => $this->dealership->id]);
+        \App\Models\TaskResponse::create([
+            'task_id' => $task->id,
+            'user_id' => $this->manager->id,
+            'status' => 'completed',
+            'responded_at' => Carbon::now(),
+        ]);
+
+        // Act
+        $response = $this->actingAs($this->manager, 'sanctum')
+            ->patchJson("/api/v1/tasks/{$task->id}/status", ['status' => 'pending']);
+
+        // Assert
+        $response->assertStatus(200);
+        expect($response->json('status'))->toBe('pending');
+    });
+
+    it('filters tasks by pending_review status', function () {
+        // Arrange
+        $task1 = Task::factory()->create(['dealership_id' => $this->dealership->id, 'title' => 'Review Task']);
+        $task2 = Task::factory()->create(['dealership_id' => $this->dealership->id, 'title' => 'Other Task']);
+        \App\Models\TaskResponse::create([
+            'task_id' => $task1->id,
+            'user_id' => $this->manager->id,
+            'status' => 'pending_review',
+            'responded_at' => Carbon::now(),
+        ]);
+
+        // Act
+        $response = $this->actingAs($this->manager, 'sanctum')
+            ->getJson("/api/v1/tasks?dealership_id={$this->dealership->id}&status=pending_review");
+
+        // Assert
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('Review Task');
+    });
 });
 
 

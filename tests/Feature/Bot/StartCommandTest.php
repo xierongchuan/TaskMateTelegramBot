@@ -16,12 +16,14 @@ class StartCommandTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected AutoDealership $dealership;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         // Create a dealership for users who need it
-        AutoDealership::create([
+        $this->dealership = AutoDealership::create([
             'name' => 'Test Dealership',
             'address' => 'Test Address',
             'phone' => '+79991234567',
@@ -37,7 +39,7 @@ class StartCommandTest extends TestCase
             'phone' => '+79991234567',
             'role' => Role::EMPLOYEE->value,
             'telegram_id' => 123456789,
-            'dealership_id' => 1,
+            'dealership_id' => $this->dealership->id,
         ]);
 
         $this->actingAs($user);
@@ -58,7 +60,7 @@ class StartCommandTest extends TestCase
             'phone' => '+79991234568',
             'role' => Role::MANAGER->value,
             'telegram_id' => 123456790,
-            'dealership_id' => 1,
+            'dealership_id' => $this->dealership->id,
         ]);
 
         $this->actingAs($user);
@@ -77,7 +79,7 @@ class StartCommandTest extends TestCase
             'phone' => '+79991234569',
             'role' => Role::OBSERVER->value,
             'telegram_id' => 123456791,
-            'dealership_id' => 1,
+            'dealership_id' => $this->dealership->id,
         ]);
 
         $this->actingAs($user);

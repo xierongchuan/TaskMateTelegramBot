@@ -162,6 +162,12 @@ class Task extends Model
                 return 'completed';
             }
 
+            // Check if at least one has pending_review
+            $pendingReviewUserIds = $responses->where('status', 'pending_review')->pluck('user_id')->unique()->values()->toArray();
+            if (count($pendingReviewUserIds) > 0) {
+                return 'pending_review';
+            }
+
             // Check if at least one has acknowledged
             $acknowledgedUserIds = $responses->where('status', 'acknowledged')->pluck('user_id')->unique()->values()->toArray();
             if (count($acknowledgedUserIds) > 0) {
@@ -171,6 +177,10 @@ class Task extends Model
             // For individual tasks: first response determines status
             if ($responses->contains('status', 'completed')) {
                 return 'completed';
+            }
+
+            if ($responses->contains('status', 'pending_review')) {
+                return 'pending_review';
             }
 
             if ($responses->contains('status', 'acknowledged')) {

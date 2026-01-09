@@ -208,6 +208,12 @@ class TaskController extends Controller
                     });
                     break;
 
+                case 'pending_review':
+                    $query->whereHas('responses', function ($q) {
+                        $q->where('status', 'pending_review');
+                    });
+                    break;
+
                 case 'overdue':
                     $query->where('is_active', true)
                           ->whereNotNull('deadline')
@@ -599,7 +605,7 @@ class TaskController extends Controller
         }
 
         $validated = $request->validate([
-            'status' => 'required|string|in:pending,completed',
+            'status' => 'required|string|in:pending,pending_review,completed',
         ]);
 
         $status = $validated['status'];
@@ -609,6 +615,17 @@ class TaskController extends Controller
             case 'pending':
                 // Reset task: remove all responses
                 $task->responses()->delete();
+                break;
+
+            case 'pending_review':
+                // Update or create response with pending_review status
+                $task->responses()->updateOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'status' => $status,
+                        'responded_at' => Carbon::now(),
+                    ]
+                );
                 break;
 
             case 'completed':
