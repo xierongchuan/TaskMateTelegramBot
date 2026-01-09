@@ -127,7 +127,7 @@ class ArchivedTaskControllerTest extends TestCase
         $response = $this->getJson('/api/v1/archived-tasks/export');
 
         $response->assertOk()
-            ->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+            ->assertHeader('Content-Type', 'text/csv; charset=utf-8');
     }
 
     public function test_can_filter_by_date_range(): void
