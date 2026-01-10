@@ -229,7 +229,7 @@ class TaskController extends Controller
                 case 'pending':
                     $query->where('is_active', true)
                           ->whereDoesntHave('responses', function ($q) {
-                              $q->whereIn('status', ['completed', 'acknowledged']);
+                              $q->whereIn('status', ['completed', 'acknowledged', 'pending_review']);
                           });
                     break;
 

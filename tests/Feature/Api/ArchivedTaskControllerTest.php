@@ -56,11 +56,13 @@ class ArchivedTaskControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonStructure([
-                'success',
                 'data' => [
                     '*' => ['id', 'title', 'archived_at', 'archive_reason']
                 ],
-                'meta' => ['current_page', 'last_page', 'per_page', 'total'],
+                'current_page',
+                'last_page',
+                'per_page',
+                'total',
             ]);
 
         $this->assertCount(3, $response->json('data'));

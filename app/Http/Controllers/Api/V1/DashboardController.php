@@ -102,7 +102,8 @@ class DashboardController extends Controller
                     $q->where('dealership_id', $dealershipId);
                 }
             })
-            ->count();
+            ->distinct('task_id')
+            ->count('task_id');
 
         $overdue = (clone $query)
             ->where('deadline', '<', Carbon::now())

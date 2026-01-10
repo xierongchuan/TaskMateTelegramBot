@@ -45,11 +45,13 @@ class TaskGeneratorControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonStructure([
-                'success',
                 'data' => [
                     '*' => ['id', 'title', 'recurrence', 'is_active']
                 ],
-                'meta' => ['current_page', 'last_page', 'per_page', 'total'],
+                'current_page',
+                'last_page',
+                'per_page',
+                'total',
             ]);
 
         $this->assertCount(3, $response->json('data'));
@@ -242,5 +244,75 @@ class TaskGeneratorControllerTest extends TestCase
                     'average_completion_time_minutes',
                 ]
             ]);
+    }
+
+    public function test_owner_can_pause_all_generators(): void
+    {
+        $owner = User::factory()->create(['role' => Role::OWNER]);
+        Sanctum::actingAs($owner);
+
+        TaskGenerator::factory()->count(3)->create([
+            'dealership_id' => $this->dealership->id,
+            'creator_id' => $this->manager->id,
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/task-generators/pause-all');
+
+        $response->assertOk();
+        $this->assertEquals(3, $response->json('paused_count'));
+        $this->assertEquals(0, TaskGenerator::where('is_active', true)->count());
+    }
+
+    public function test_manager_cannot_pause_all_generators(): void
+    {
+        Sanctum::actingAs($this->manager);
+
+        TaskGenerator::factory()->count(2)->create([
+            'dealership_id' => $this->dealership->id,
+            'creator_id' => $this->manager->id,
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/task-generators/pause-all');
+
+        $response->assertForbidden();
+        // Generators should still be active
+        $this->assertEquals(2, TaskGenerator::where('is_active', true)->count());
+    }
+
+    public function test_owner_can_resume_all_generators(): void
+    {
+        $owner = User::factory()->create(['role' => Role::OWNER]);
+        Sanctum::actingAs($owner);
+
+        TaskGenerator::factory()->count(3)->create([
+            'dealership_id' => $this->dealership->id,
+            'creator_id' => $this->manager->id,
+            'is_active' => false,
+        ]);
+
+        $response = $this->postJson('/api/v1/task-generators/resume-all');
+
+        $response->assertOk();
+        $this->assertEquals(3, $response->json('resumed_count'));
+        $this->assertEquals(3, TaskGenerator::where('is_active', true)->count());
+    }
+
+    public function test_manager_cannot_resume_all_generators(): void
+    {
+        Sanctum::actingAs($this->manager);
+
+        TaskGenerator::factory()->count(2)->create([
+            'dealership_id' => $this->dealership->id,
+            'creator_id' => $this->manager->id,
+            'is_active' => false,
+        ]);
+
+        $response = $this->postJson('/api/v1/task-generators/resume-all');
+
+        $response->assertForbidden();
+        // Generators should still be paused
+        $this->assertEquals(0, TaskGenerator::where('is_active', true)->count());
     }
 }

@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Shift;
 use App\Models\Task;
+use App\Models\TaskResponse;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -93,6 +94,14 @@ class ReportController extends Controller
         $applyTaskFilter($activeTasksQuery);
         $activeTasksCount = $activeTasksQuery->count();
 
+        // Pending review tasks count
+        $pendingReviewQuery = Task::whereBetween('created_at', [$from, $to])
+            ->whereHas('responses', function ($q) {
+                $q->where('status', 'pending_review');
+            });
+        $applyTaskFilter($pendingReviewQuery);
+        $pendingReviewTasks = $pendingReviewQuery->count();
+
         $tasksByStatus = [
             [
                 'status' => 'completed',
@@ -108,6 +117,11 @@ class ReportController extends Controller
                 'status' => 'active',
                 'count' => $activeTasksCount,
                 'percentage' => $totalTasks > 0 ? round(($activeTasksCount / $totalTasks) * 100, 1) : 0
+            ],
+            [
+                'status' => 'pending_review',
+                'count' => $pendingReviewTasks,
+                'percentage' => $totalTasks > 0 ? round(($pendingReviewTasks / $totalTasks) * 100, 1) : 0
             ]
         ];
 

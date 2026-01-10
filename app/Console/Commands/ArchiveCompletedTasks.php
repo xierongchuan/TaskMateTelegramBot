@@ -13,65 +13,148 @@ use Illuminate\Support\Facades\Log;
 
 class ArchiveCompletedTasks extends Command
 {
-    protected $signature = 'tasks:archive-completed {--force : Force archiving even if not the configured day}';
+    protected $signature = 'tasks:archive-completed
+                            {--type=all : Type of tasks to archive: completed, overdue, or all}
+                            {--force : Force archiving even if not the configured day/time}';
 
-    protected $description = 'Archive completed and overdue tasks based on auto_archive_day_of_week setting';
+    protected $description = 'Archive completed and/or overdue tasks based on settings';
 
     public function handle(SettingsService $settingsService): int
     {
-        $today = Carbon::now('Asia/Yekaterinburg')->dayOfWeek;
-        $todayConverted = $today === 0 ? 7 : $today;
+        $type = $this->option('type');
+        $force = $this->option('force');
+        $now = Carbon::now('Asia/Yekaterinburg');
+        $todayDayOfWeek = $now->dayOfWeek === 0 ? 7 : $now->dayOfWeek; // 1-7 (Mon-Sun)
+        $currentTime = $now->format('H:i');
 
-        $this->info("Current day of week: $todayConverted (" . Carbon::now('Asia/Yekaterinburg')->format('l') . ")");
+        $this->info("Current time: {$now->format('Y-m-d H:i:s')} (Day: $todayDayOfWeek)");
+        $this->info("Archive type: $type");
 
+        $archivedCompleted = 0;
+        $archivedOverdue = 0;
+
+        // Get dealership-specific settings
         $dealershipSettings = DB::table('settings')
-            ->where('key', 'auto_archive_day_of_week')
+            ->whereIn('key', ['archive_completed_time', 'archive_overdue_day_of_week', 'archive_overdue_time'])
             ->whereNotNull('dealership_id')
-            ->get();
+            ->get()
+            ->groupBy('dealership_id');
 
-        $globalSetting = $settingsService->get('auto_archive_day_of_week');
-        $archivedCount = 0;
+        // Get global settings
+        $globalCompletedTime = $settingsService->get('archive_completed_time') ?? '03:00';
+        $globalOverdueDayOfWeek = (int) ($settingsService->get('archive_overdue_day_of_week') ?? 0);
+        $globalOverdueTime = $settingsService->get('archive_overdue_time') ?? '03:00';
 
-        foreach ($dealershipSettings as $setting) {
-            $archiveDay = (int) $setting->value;
+        // Process dealership-specific archiving
+        $processedDealerships = [];
+        foreach ($dealershipSettings as $dealershipId => $settings) {
+            $settingsMap = $settings->pluck('value', 'key')->toArray();
 
-            if ($archiveDay === 0) {
-                continue;
+            $completedTime = $settingsMap['archive_completed_time'] ?? $globalCompletedTime;
+            $overdueDayOfWeek = (int) ($settingsMap['archive_overdue_day_of_week'] ?? $globalOverdueDayOfWeek);
+            $overdueTime = $settingsMap['archive_overdue_time'] ?? $globalOverdueTime;
+
+            // Archive completed tasks (daily at configured time)
+            if (in_array($type, ['completed', 'all'])) {
+                if ($force || $this->isTimeMatch($currentTime, $completedTime)) {
+                    $count = $this->archiveCompletedTasks((int) $dealershipId);
+                    $archivedCompleted += $count;
+                    if ($count > 0) {
+                        $this->info("  Dealership $dealershipId: Archived $count completed tasks");
+                    }
+                }
             }
 
-            if ($this->option('force') || $archiveDay === $todayConverted) {
-                $this->info("Archiving tasks for dealership {$setting->dealership_id}...");
-                $count = $this->archiveTasksForDealership((int) $setting->dealership_id);
-                $archivedCount += $count;
-                $this->info("  Archived $count tasks");
+            // Archive overdue tasks (weekly at configured day/time)
+            if (in_array($type, ['overdue', 'all'])) {
+                if ($overdueDayOfWeek > 0) {
+                    if ($force || ($todayDayOfWeek === $overdueDayOfWeek && $this->isTimeMatch($currentTime, $overdueTime))) {
+                        $count = $this->archiveOverdueTasks((int) $dealershipId);
+                        $archivedOverdue += $count;
+                        if ($count > 0) {
+                            $this->info("  Dealership $dealershipId: Archived $count overdue tasks");
+                        }
+                    }
+                }
+            }
+
+            $processedDealerships[] = $dealershipId;
+        }
+
+        // Process tasks for dealerships without specific settings (use global settings)
+        $remainingDealerships = DB::table('tasks')
+            ->whereNull('archived_at')
+            ->where('is_active', true)
+            ->whereNotNull('dealership_id')
+            ->whereNotIn('dealership_id', $processedDealerships)
+            ->distinct()
+            ->pluck('dealership_id');
+
+        foreach ($remainingDealerships as $dealershipId) {
+            // Archive completed tasks (daily at configured time)
+            if (in_array($type, ['completed', 'all'])) {
+                if ($force || $this->isTimeMatch($currentTime, $globalCompletedTime)) {
+                    $count = $this->archiveCompletedTasks((int) $dealershipId);
+                    $archivedCompleted += $count;
+                    if ($count > 0) {
+                        $this->info("  Dealership $dealershipId: Archived $count completed tasks (global settings)");
+                    }
+                }
+            }
+
+            // Archive overdue tasks (weekly at configured day/time)
+            if (in_array($type, ['overdue', 'all'])) {
+                if ($globalOverdueDayOfWeek > 0) {
+                    if ($force || ($todayDayOfWeek === $globalOverdueDayOfWeek && $this->isTimeMatch($currentTime, $globalOverdueTime))) {
+                        $count = $this->archiveOverdueTasks((int) $dealershipId);
+                        $archivedOverdue += $count;
+                        if ($count > 0) {
+                            $this->info("  Dealership $dealershipId: Archived $count overdue tasks (global settings)");
+                        }
+                    }
+                }
             }
         }
 
-        if ($globalSetting && $globalSetting > 0) {
-            if ($this->option('force') || (int) $globalSetting === $todayConverted) {
-                $this->info("Archiving tasks without dealership (global setting)...");
-                $count = $this->archiveTasksForDealership(null);
-                $archivedCount += $count;
-                $this->info("  Archived $count tasks");
-            }
-        }
-
-        if ($archivedCount > 0) {
-            $this->info("Total archived: $archivedCount tasks");
-            Log::info("Auto-archived $archivedCount tasks");
+        // Summary
+        $totalArchived = $archivedCompleted + $archivedOverdue;
+        if ($totalArchived > 0) {
+            $this->info("Total archived: $archivedCompleted completed, $archivedOverdue overdue tasks");
+            Log::info("Auto-archived tasks", [
+                'completed' => $archivedCompleted,
+                'overdue' => $archivedOverdue,
+            ]);
         } else {
-            $this->info("No tasks to archive today");
+            $this->info("No tasks to archive");
         }
 
         return Command::SUCCESS;
     }
 
-    private function archiveTasksForDealership(?int $dealershipId): int
+    /**
+     * Check if current time matches configured time (with 5 minute tolerance)
+     */
+    private function isTimeMatch(string $currentTime, string $configuredTime): bool
     {
-        // Get tasks that are active and not already archived
+        $current = Carbon::createFromFormat('H:i', $currentTime, 'Asia/Yekaterinburg');
+        $configured = Carbon::createFromFormat('H:i', $configuredTime, 'Asia/Yekaterinburg');
+
+        return abs($current->diffInMinutes($configured)) <= 5;
+    }
+
+    /**
+     * Archive completed tasks for a dealership
+     */
+    private function archiveCompletedTasks(?int $dealershipId): int
+    {
+        $cutoffDate = Carbon::now('Asia/Yekaterinburg')->subDay();
+
         $query = Task::query()
             ->where('is_active', true)
-            ->whereNull('archived_at');
+            ->whereNull('archived_at')
+            ->whereHas('responses', function ($q) {
+                $q->where('status', 'completed');
+            });
 
         if ($dealershipId !== null) {
             $query->where('dealership_id', $dealershipId);
@@ -79,47 +162,60 @@ class ArchiveCompletedTasks extends Command
             $query->whereNull('dealership_id');
         }
 
-        // Archive tasks based on their computed status
-        $cutoffDate = Carbon::now('Asia/Yekaterinburg')->subDay();
-        $tasksToArchive = $query->with(['responses', 'assignments'])->get();
-
+        $tasks = $query->with('responses')->get();
         $archivedCount = 0;
 
-        foreach ($tasksToArchive as $task) {
-            $status = $task->status;
-            $shouldArchive = false;
-            $archiveReason = null;
+        foreach ($tasks as $task) {
+            $lastResponse = $task->responses()
+                ->where('status', 'completed')
+                ->orderBy('created_at', 'desc')
+                ->first();
 
-            // Archive completed tasks that were completed more than 1 day ago
-            if ($status === 'completed') {
-                // Check last response for completion time
-                $lastResponse = $task->responses()
-                    ->where('status', 'completed')
-                    ->orderBy('created_at', 'desc')
-                    ->first();
-
-                if ($lastResponse && Carbon::parse($lastResponse->created_at)->lt($cutoffDate)) {
-                    $shouldArchive = true;
-                    $archiveReason = 'completed';
-                }
-            }
-
-            // Archive overdue tasks that have passed deadline by more than 1 day
-            if ($status === 'overdue' && $task->deadline) {
-                if (Carbon::parse($task->deadline)->lt($cutoffDate)) {
-                    $shouldArchive = true;
-                    $archiveReason = 'expired';
-                }
-            }
-
-            if ($shouldArchive) {
+            // Only archive if completed more than 1 day ago
+            if ($lastResponse && Carbon::parse($lastResponse->created_at)->lt($cutoffDate)) {
                 $task->update([
                     'is_active' => false,
                     'archived_at' => Carbon::now(),
-                    'archive_reason' => $archiveReason,
+                    'archive_reason' => 'completed',
                 ]);
                 $archivedCount++;
             }
+        }
+
+        return $archivedCount;
+    }
+
+    /**
+     * Archive overdue tasks for a dealership
+     */
+    private function archiveOverdueTasks(?int $dealershipId): int
+    {
+        $cutoffDate = Carbon::now('Asia/Yekaterinburg')->subDay();
+
+        $query = Task::query()
+            ->where('is_active', true)
+            ->whereNull('archived_at')
+            ->whereNotNull('deadline')
+            ->where('deadline', '<', $cutoffDate)
+            ->whereDoesntHave('responses', function ($q) {
+                $q->where('status', 'completed');
+            });
+
+        if ($dealershipId !== null) {
+            $query->where('dealership_id', $dealershipId);
+        } else {
+            $query->whereNull('dealership_id');
+        }
+
+        $archivedCount = 0;
+
+        foreach ($query->get() as $task) {
+            $task->update([
+                'is_active' => false,
+                'archived_at' => Carbon::now(),
+                'archive_reason' => 'expired',
+            ]);
+            $archivedCount++;
         }
 
         return $archivedCount;

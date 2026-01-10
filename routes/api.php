@@ -115,6 +115,10 @@ Route::prefix('v1')->group(function () {
                 ->middleware('role:manager,owner');
             Route::post('/task-generators/{id}/resume', [TaskGeneratorController::class, 'resume'])
                 ->middleware('role:manager,owner');
+            Route::post('/task-generators/pause-all', [TaskGeneratorController::class, 'pauseAll'])
+                ->middleware('role:owner');
+            Route::post('/task-generators/resume-all', [TaskGeneratorController::class, 'resumeAll'])
+                ->middleware('role:owner');
 
             // Archived Tasks
             Route::get('/archived-tasks', [ArchivedTaskController::class, 'index']);

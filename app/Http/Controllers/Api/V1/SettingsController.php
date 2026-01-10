@@ -346,7 +346,10 @@ class SettingsController extends Controller
             'shift_reminder_minutes' => (int) ($this->settingsService->get('shift_reminder_minutes', $dealershipId) ?? 15),
             'maintenance_mode' => (bool) $this->settingsService->get('maintenance_mode', $dealershipId) ?? false,
             'rows_per_page' => (int) ($this->settingsService->get('rows_per_page', $dealershipId) ?? 10),
-            'auto_archive_day_of_week' => (int) ($this->settingsService->get('auto_archive_day_of_week', $dealershipId) ?? 0), // 0 = disabled, 1-7 = Monday-Sunday
+            // Archive settings - separate for completed and overdue tasks
+            'archive_completed_time' => $this->settingsService->get('archive_completed_time', $dealershipId) ?? '03:00', // Time for daily completed tasks archiving
+            'archive_overdue_day_of_week' => (int) ($this->settingsService->get('archive_overdue_day_of_week', $dealershipId) ?? 0), // 0 = disabled, 1-7 = Monday-Sunday
+            'archive_overdue_time' => $this->settingsService->get('archive_overdue_time', $dealershipId) ?? '03:00', // Time for overdue tasks archiving
             'notification_types' => $this->settingsService->get('notification_types', $dealershipId) ?? [
                 'task_overdue' => true,
                 'shift_late' => true,
@@ -374,7 +377,10 @@ class SettingsController extends Controller
             'shift_reminder_minutes' => ['nullable', 'integer', 'min:1', 'max:60'],
             'maintenance_mode' => ['nullable', 'boolean'],
             'rows_per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
-            'auto_archive_day_of_week' => ['nullable', 'integer', 'min:0', 'max:7'], // 0 = disabled, 1-7 = Monday-Sunday
+            // Archive settings - separate for completed and overdue tasks
+            'archive_completed_time' => ['nullable', 'string', 'regex:/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/'], // HH:MM format
+            'archive_overdue_day_of_week' => ['nullable', 'integer', 'min:0', 'max:7'], // 0 = disabled, 1-7 = Monday-Sunday
+            'archive_overdue_time' => ['nullable', 'string', 'regex:/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/'], // HH:MM format
             'notification_types' => ['nullable', 'array'],
             'dealership_id' => ['nullable', 'integer'],
         ]);

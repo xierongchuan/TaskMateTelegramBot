@@ -310,6 +310,35 @@ describe('Task API', function () {
         expect($data)->toHaveCount(1);
         expect($data[0]['title'])->toBe('Review Task');
     });
-});
 
+    it('filters pending tasks excluding pending_review status', function () {
+        // Arrange: task with pending_review status
+        $task1 = Task::factory()->create([
+            'dealership_id' => $this->dealership->id,
+            'title' => 'Review Task'
+        ]);
+        \App\Models\TaskResponse::create([
+            'task_id' => $task1->id,
+            'user_id' => $this->manager->id,
+            'status' => 'pending_review',
+            'responded_at' => Carbon::now(),
+        ]);
+
+        // Arrange: regular pending task (no responses)
+        $task2 = Task::factory()->create([
+            'dealership_id' => $this->dealership->id,
+            'title' => 'Pending Task'
+        ]);
+
+        // Act: filter by pending status
+        $response = $this->actingAs($this->manager, 'sanctum')
+            ->getJson("/api/v1/tasks?dealership_id={$this->dealership->id}&status=pending");
+
+        // Assert: only pending task should be returned, not pending_review
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('Pending Task');
+    });
+});
 

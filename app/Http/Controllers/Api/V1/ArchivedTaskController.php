@@ -83,16 +83,10 @@ class ArchivedTaskController extends Controller
         $perPage = min($request->get('per_page', 15), 100);
         $tasks = $query->paginate($perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => $tasks->map(fn($t) => $t->toApiArray()),
-            'meta' => [
-                'current_page' => $tasks->currentPage(),
-                'last_page' => $tasks->lastPage(),
-                'per_page' => $tasks->perPage(),
-                'total' => $tasks->total(),
-            ],
-        ]);
+        // Transform data
+        $tasks->getCollection()->transform(fn($t) => $t->toApiArray());
+
+        return response()->json($tasks);
     }
 
     /**
