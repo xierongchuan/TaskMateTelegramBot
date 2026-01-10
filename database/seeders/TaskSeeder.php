@@ -6,7 +6,6 @@ namespace Database\Seeders;
 
 use App\Enums\Role;
 use App\Models\AutoDealership;
-use App\Models\ImportantLink;
 use App\Models\Task;
 use App\Models\TaskAssignment;
 use App\Models\TaskGenerator;
@@ -15,91 +14,56 @@ use App\Models\TaskResponse;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
-class DemoDataSeeder extends Seeder
+class TaskSeeder extends Seeder
 {
+    /**
+     * Number of days to generate history for.
+     * Can be overridden by setting this static property before running the seeder.
+     */
+    public static int $historyDays = 30;
+
     /**
      * Run the database seeds.
      */
     public function run(): void
     {
-        $this->command->info('Creating Demo Data...');
+        $this->command->info("Creating Tasks with " . self::$historyDays . " days history...");
 
-        // 1. Create Dealerships
-        $dealerships = [
-            [
-                'name' => 'Avto Salon Center',
-                'address' => 'Tashkent, Amir Temur 1',
-            ],
-            [
-                'name' => 'Avto Salon Sever',
-                'address' => 'Tashkent, Yunusabad 19',
-            ],
-            [
-                'name' => 'Auto Salon Lux',
-                'address' => 'Tashkent, Chilanzar 5',
-            ],
-        ];
+        $dealerships = AutoDealership::all();
 
-        foreach ($dealerships as $index => $data) {
-            $dealership = AutoDealership::factory()->create($data);
-            $this->command->info("Created dealership: {$dealership->name}");
-
-            // 2. Create Manager
-            $managerLogin = 'manager' . ($index + 1);
-            $manager = User::updateOrCreate(
-                ['login' => $managerLogin],
-                [
-                    'full_name' => "Manager of {$dealership->name}",
-                    'password' => Hash::make('password'),
-                    'role' => Role::MANAGER,
-                    'dealership_id' => $dealership->id,
-                    'phone' => fake()->phoneNumber(),
-                    'telegram_id' => fake()->unique()->randomNumber(9),
-                ]
-            );
-            $this->command->info(" - Created Manager: {$manager->login} / password");
-
-            // 3. Create Employees
-            $employees = [];
-            for ($i = 1; $i <= 3; $i++) {
-                $empLogin = 'emp' . ($index + 1) . '_' . $i;
-                $employee = User::updateOrCreate(
-                    ['login' => $empLogin],
-                    [
-                        'full_name' => "Employee {$i} of {$dealership->name}",
-                        'password' => Hash::make('password'),
-                        'role' => Role::EMPLOYEE,
-                        'dealership_id' => $dealership->id,
-                        'phone' => fake()->phoneNumber(),
-                        'telegram_id' => fake()->unique()->randomNumber(9),
-                    ]
-                );
-                $employees[] = $employee;
-                $this->command->info(" - Created Employee: {$employee->login} / password");
-            }
-
-            // 4. Create Important Links
-            ImportantLink::factory(5)->create([
-                'dealership_id' => $dealership->id,
-                'creator_id' => $manager->id,
-            ]);
-            $this->command->info(" - Created 5 Important Links");
-
-            // 5. Create Task Generators with full history
-            $this->createTaskGeneratorsWithHistory($dealership, $manager, $employees);
-
-            // 6. Create One-time Tasks
-            $this->createOneTimeTasks($dealership, $manager, $employees);
+        if ($dealerships->isEmpty()) {
+            $this->command->warn('No dealerships found. Skipping task generation.');
+            return;
         }
 
-        $this->command->info('Demo Data Creation Completed!');
+        foreach ($dealerships as $dealership) {
+            $manager = User::where('dealership_id', $dealership->id)
+                ->where('role', Role::MANAGER)
+                ->first();
+
+            if (!$manager) {
+                // Try finding any manager linked to this dealership potentially?
+                // For now, assume the standard structure where manager has dealership_id
+                $this->command->warn("No manager found for dealership {$dealership->name}. Skipping.");
+                continue;
+            }
+
+            $employees = User::where('dealership_id', $dealership->id)
+                ->where('role', Role::EMPLOYEE)
+                ->get()
+                ->all();
+
+            if (empty($employees)) {
+                $this->command->warn("No employees found for dealership {$dealership->name}. Skipping.");
+                continue;
+            }
+
+            $this->createTaskGeneratorsWithHistory($dealership, $manager, $employees);
+            $this->createOneTimeTasks($dealership, $manager, $employees);
+        }
     }
 
-    /**
-     * Create task generators with realistic history of generated tasks.
-     */
     private function createTaskGeneratorsWithHistory($dealership, $manager, array $employees): void
     {
         $generators = [
@@ -113,7 +77,7 @@ class DemoDataSeeder extends Seeder
                 'response_type' => 'complete',
                 'priority' => 'high',
                 'tags' => ['проверка', 'автомобили'],
-                'history_days' => 365, // Generate history for a year
+                'history_days' => self::$historyDays,
             ],
             [
                 'title' => 'Еженедельный отчет по продажам',
@@ -126,7 +90,7 @@ class DemoDataSeeder extends Seeder
                 'response_type' => 'complete',
                 'priority' => 'medium',
                 'tags' => ['отчет', 'продажи'],
-                'history_days' => 365,
+                'history_days' => self::$historyDays,
             ],
             [
                 'title' => 'Ежемесячная инвентаризация',
@@ -139,7 +103,7 @@ class DemoDataSeeder extends Seeder
                 'response_type' => 'complete',
                 'priority' => 'high',
                 'tags' => ['инвентаризация', 'склад'],
-                'history_days' => 365,
+                'history_days' => self::$historyDays,
             ],
             [
                 'title' => 'Утренняя уборка шоурума',
@@ -151,7 +115,7 @@ class DemoDataSeeder extends Seeder
                 'response_type' => 'acknowledge',
                 'priority' => 'medium',
                 'tags' => ['уборка', 'шоурум'],
-                'history_days' => 90,
+                'history_days' => min(90, self::$historyDays), // Cap at historyDays
             ],
             [
                 'title' => 'Еженедельное совещание команды',
@@ -164,7 +128,7 @@ class DemoDataSeeder extends Seeder
                 'response_type' => 'acknowledge',
                 'priority' => 'low',
                 'tags' => ['совещание', 'команда'],
-                'history_days' => 180,
+                'history_days' => min(180, self::$historyDays),
             ],
         ];
 
@@ -211,7 +175,6 @@ class DemoDataSeeder extends Seeder
                 $assignedEmployees[] = $emp;
             }
 
-            // Generate historical tasks
             $tasksCreated = $this->generateHistoricalTasks(
                 $generator,
                 $assignedEmployees,
@@ -220,19 +183,15 @@ class DemoDataSeeder extends Seeder
             $totalTasks += $tasksCreated;
         }
 
-        $this->command->info(" - Created " . count($generators) . " Task Generators with {$totalTasks} historical tasks");
+        $this->command->info(" - Created " . count($generators) . " Task Generators with {$totalTasks} historical tasks for {$dealership->name}");
     }
 
-    /**
-     * Generate historical tasks for a generator.
-     */
     private function generateHistoricalTasks(TaskGenerator $generator, array $assignedEmployees, int $historyDays): int
     {
         $tasksCreated = 0;
         $today = Carbon::today('Asia/Yekaterinburg');
         $startDate = $today->copy()->subDays($historyDays);
 
-        // Parse times
         $recurrenceTime = Carbon::createFromFormat('H:i:s', $generator->recurrence_time, 'Asia/Yekaterinburg');
         $deadlineTime = Carbon::createFromFormat('H:i:s', $generator->deadline_time, 'Asia/Yekaterinburg');
 
@@ -253,7 +212,6 @@ class DemoDataSeeder extends Seeder
                     if ($targetDay > 0) {
                         $shouldGenerate = $currentDate->day === $targetDay;
                     } else {
-                        // Negative days (e.g. -1 is last day of month)
                         $daysInMonth = $currentDate->daysInMonth;
                         $calculatedDay = $daysInMonth + $targetDay + 1;
                         $shouldGenerate = $currentDate->day === $calculatedDay;
@@ -262,10 +220,12 @@ class DemoDataSeeder extends Seeder
             }
 
             if ($shouldGenerate) {
+                // Check if already exists to avoid duplicates if re-running without fresh
+                // But seeding usually assumes fresh or append. We'll proceed.
+
                 $appearDate = $currentDate->copy()->setTime($recurrenceTime->hour, $recurrenceTime->minute, 0);
                 $deadline = $currentDate->copy()->setTime($deadlineTime->hour, $deadlineTime->minute, 0);
 
-                // If deadline is before appear time, it's next day
                 if ($deadline->lt($appearDate)) {
                     $deadline->addDay();
                 }
@@ -286,7 +246,6 @@ class DemoDataSeeder extends Seeder
                     'is_active' => true,
                 ]);
 
-                // Assign employees
                 foreach ($assignedEmployees as $emp) {
                     TaskAssignment::create([
                         'task_id' => $task->id,
@@ -295,54 +254,34 @@ class DemoDataSeeder extends Seeder
                     ]);
                 }
 
-                // Generate realistic responses for past tasks
                 $this->generateTaskResponses($task, $assignedEmployees, $deadline);
-
                 $tasksCreated++;
             }
 
             $currentDate->addDay();
         }
 
-        // Update generator last_generated_at
         $generator->update(['last_generated_at' => $today]);
 
         return $tasksCreated;
     }
 
-    /**
-     * Generate realistic task responses.
-     *
-     * Statistics targets:
-     * - ~75% completed on time
-     * - ~10% completed late
-     * - ~10% expired (not completed)
-     * - ~5% still pending (recent tasks only)
-     */
     private function generateTaskResponses(Task $task, array $assignedEmployees, Carbon $deadline): void
     {
         $now = Carbon::now('Asia/Yekaterinburg');
         $isPast = $deadline->lt($now);
         $isRecent = $deadline->diffInDays($now) < 3;
 
-        // For future/today tasks, leave some pending
         if (!$isPast || ($isRecent && fake()->boolean(30))) {
-            // Task is pending or recent - no responses yet
             return;
         }
 
-        // Determine outcome: 75% on-time, 10% late, 15% expired
         $outcome = fake()->randomFloat(2, 0, 1);
 
         if ($outcome < 0.75) {
-            // Completed on time
-            $responseTime = fake()->dateTimeBetween(
-                $task->appear_date,
-                $deadline
-            );
+            $responseTime = fake()->dateTimeBetween($task->appear_date, $deadline);
             $this->completeTask($task, $assignedEmployees, Carbon::parse($responseTime));
         } elseif ($outcome < 0.85) {
-            // Completed late
             $hoursLate = fake()->numberBetween(1, 48);
             $responseTime = $deadline->copy()->addHours($hoursLate);
             if ($responseTime->gt($now)) {
@@ -350,7 +289,6 @@ class DemoDataSeeder extends Seeder
             }
             $this->completeTask($task, $assignedEmployees, $responseTime);
         } else {
-            // Expired - no completion, archive the task
             $task->update([
                 'archived_at' => $deadline->copy()->addHours(24),
                 'archive_reason' => 'expired',
@@ -359,13 +297,9 @@ class DemoDataSeeder extends Seeder
         }
     }
 
-    /**
-     * Complete a task with responses from assigned employees.
-     */
     private function completeTask(Task $task, array $assignedEmployees, Carbon $responseTime): void
     {
         foreach ($assignedEmployees as $emp) {
-            // For group tasks, add slight variation in response times
             $empResponseTime = $responseTime->copy();
             if (count($assignedEmployees) > 1) {
                 $empResponseTime->addMinutes(fake()->numberBetween(0, 120));
@@ -380,7 +314,6 @@ class DemoDataSeeder extends Seeder
             ]);
         }
 
-        // Archive the task as completed
         $task->update([
             'archived_at' => $responseTime,
             'archive_reason' => 'completed',
@@ -388,14 +321,9 @@ class DemoDataSeeder extends Seeder
         ]);
     }
 
-    /**
-     * Create one-time tasks for a dealership.
-     */
     private function createOneTimeTasks($dealership, $manager, array $employees): void
     {
-        // Individual Tasks for each employee - mix of active and completed
         foreach ($employees as $emp) {
-            // Active tasks
             $activeTasks = Task::factory(2)->create([
                 'dealership_id' => $dealership->id,
                 'creator_id' => $manager->id,
@@ -414,7 +342,6 @@ class DemoDataSeeder extends Seeder
                 ]);
             }
 
-            // Completed tasks from the past
             $completedTasks = Task::factory(3)->create([
                 'dealership_id' => $dealership->id,
                 'creator_id' => $manager->id,
@@ -444,7 +371,6 @@ class DemoDataSeeder extends Seeder
             }
         }
 
-        // Group Tasks
         $groupTasks = Task::factory(2)->create([
             'dealership_id' => $dealership->id,
             'creator_id' => $manager->id,
@@ -464,8 +390,6 @@ class DemoDataSeeder extends Seeder
                 ]);
             }
         }
-
-        $taskCount = count($employees) * 5 + 2;
-        $this->command->info(" - Created {$taskCount} One-time Tasks");
+        $this->command->info(" - Created One-time Tasks for {$dealership->name}");
     }
 }

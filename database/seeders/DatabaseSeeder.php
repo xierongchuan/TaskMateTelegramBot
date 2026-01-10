@@ -15,15 +15,14 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        User::updateOrCreate(
-            ['login' => 'admin'],
-            [
-                'full_name' => 'Admin User',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                'role' => \App\Enums\Role::OWNER,
-            ]
-        );
+        // 1. Always create Admin
+        $this->call(AdminSeeder::class);
 
-        $this->call(DemoDataSeeder::class);
+        // 2. Demo Data (Dealerships, Users, Tasks)
+        // Use 'php artisan db:seed-demo' for interactive mode
+        // or uncomment below for default full seed:
+
+        // $this->call(DealershipSeeder::class);
+        // $this->call(TaskSeeder::class);
     }
 }
