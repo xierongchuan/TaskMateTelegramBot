@@ -1,0 +1,117 @@
+"""Polling-уведомления: периодический опрос API для отправки уведомлений."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+
+from aiogram import Bot
+
+import httpx
+
+from src.api.client import TaskMateAPI
+from src.bot import keyboards, messages
+from src.storage.sessions import get_all_sessions
+
+logger = logging.getLogger(__name__)
+
+# Хранение: chat_id -> set(task_id) — уже уведомлённые задачи (в рамках сессии процесса)
+_notified_tasks: dict[int, set[int]] = {}
+_notified_deadlines: dict[int, set[int]] = {}
+_notified_overdue: dict[int, set[int]] = {}
+
+
+async def check_new_tasks(bot: Bot) -> None:
+    """Проверить новые назначенные задачи и отправить уведомления."""
+    sessions = await get_all_sessions()
+    for chat_id, session in sessions.items():
+        try:
+            api = TaskMateAPI(token=session.token)
+            result = await api.get_tasks({"status": "pending", "per_page": 50})
+            tasks = result.get("data", [])
+
+            notified = _notified_tasks.setdefault(chat_id, set())
+            for task in tasks:
+                task_id = task["id"]
+                if task_id not in notified:
+                    notified.add(task_id)
+                    kb = keyboards.notification_task_actions(
+                        task_id, task.get("response_type", "")
+                    )
+                    await bot.send_message(
+                        chat_id,
+                        messages.notification_new_task(task),
+                        reply_markup=kb,
+                    )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                logger.debug("Сессия %s истекла", chat_id)
+            else:
+                logger.warning("Ошибка polling new_tasks для %s: %s", chat_id, e)
+        except Exception:
+            logger.exception("Ошибка polling new_tasks для %s", chat_id)
+
+
+async def check_deadlines(bot: Bot) -> None:
+    """Проверить приближающиеся дедлайны (30 мин)."""
+    now = datetime.now(timezone.utc)
+    sessions = await get_all_sessions()
+    for chat_id, session in sessions.items():
+        try:
+            api = TaskMateAPI(token=session.token)
+            result = await api.get_tasks({"per_page": 50})
+            tasks = result.get("data", [])
+
+            notified = _notified_deadlines.setdefault(chat_id, set())
+            for task in tasks:
+                task_id = task["id"]
+                if task_id in notified:
+                    continue
+                deadline_str = task.get("deadline")
+                if not deadline_str:
+                    continue
+                status = task.get("status", "")
+                if status in ("completed", "completed_late"):
+                    continue
+                try:
+                    deadline = datetime.fromisoformat(
+                        deadline_str.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    continue
+                diff = (deadline - now).total_seconds()
+                if 0 < diff <= 1800:  # 30 минут
+                    notified.add(task_id)
+                    minutes = int(diff / 60)
+                    await bot.send_message(
+                        chat_id,
+                        messages.notification_deadline_soon(task, minutes),
+                    )
+        except httpx.HTTPStatusError:
+            pass
+        except Exception:
+            logger.exception("Ошибка polling deadlines для %s", chat_id)
+
+
+async def check_overdue(bot: Bot) -> None:
+    """Проверить просроченные задачи."""
+    sessions = await get_all_sessions()
+    for chat_id, session in sessions.items():
+        try:
+            api = TaskMateAPI(token=session.token)
+            result = await api.get_tasks({"deadline": "overdue", "per_page": 50})
+            tasks = result.get("data", [])
+
+            notified = _notified_overdue.setdefault(chat_id, set())
+            for task in tasks:
+                task_id = task["id"]
+                if task_id not in notified:
+                    notified.add(task_id)
+                    await bot.send_message(
+                        chat_id,
+                        messages.notification_overdue(task),
+                    )
+        except httpx.HTTPStatusError:
+            pass
+        except Exception:
+            logger.exception("Ошибка polling overdue для %s", chat_id)

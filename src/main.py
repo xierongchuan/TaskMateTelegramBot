@@ -1,0 +1,69 @@
+"""Точка входа TaskMateBot: запуск aiogram + APScheduler polling."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from apscheduler import AsyncScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+
+from src.bot.bot import AuthMiddleware, bot, dp
+from src.bot.handlers import auth, common, shifts, tasks
+from src.config import settings
+from src.scheduler.polling import check_deadlines, check_new_tasks, check_overdue
+from src.storage import sessions
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+async def main() -> None:
+    logger.info("Запуск TaskMateBot...")
+
+    # Регистрация роутеров (common без auth middleware, остальные с ним)
+    dp.include_router(common.router)
+
+    # Роутеры, требующие авторизации
+    for r in (auth.router, tasks.router, shifts.router):
+        r.message.middleware(AuthMiddleware())
+        r.callback_query.middleware(AuthMiddleware())
+        dp.include_router(r)
+
+    # Запуск scheduler для polling уведомлений
+    async with AsyncScheduler() as scheduler:
+        await scheduler.add_schedule(
+            check_new_tasks,
+            IntervalTrigger(seconds=settings.polling_interval_new_tasks),
+            id="check_new_tasks",
+            kwargs={"bot": bot},
+        )
+        await scheduler.add_schedule(
+            check_deadlines,
+            IntervalTrigger(seconds=settings.polling_interval_deadlines),
+            id="check_deadlines",
+            kwargs={"bot": bot},
+        )
+        await scheduler.add_schedule(
+            check_overdue,
+            IntervalTrigger(seconds=settings.polling_interval_overdue),
+            id="check_overdue",
+            kwargs={"bot": bot},
+        )
+        await scheduler.start_in_background()
+
+        logger.info("Polling scheduler запущен")
+
+        try:
+            await dp.start_polling(bot)
+        finally:
+            logger.info("Остановка TaskMateBot...")
+            await sessions.close()
+            await bot.session.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
