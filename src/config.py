@@ -13,12 +13,16 @@ class Settings(BaseSettings):
     valkey_port: int = 6379
     valkey_db: int = 1
 
+    rabbitmq_host: str = "rabbitmq"
+    rabbitmq_port: int = 5672
+    rabbitmq_user: str = "taskmate"
+    rabbitmq_password: str = "taskmate_secret"
+    rabbitmq_vhost: str = "/"
+
     log_level: str = "INFO"
 
-    # Интервалы polling (секунды)
-    polling_interval_new_tasks: int = 120
+    # Интервал polling дедлайнов (секунды)
     polling_interval_deadlines: int = 300
-    polling_interval_overdue: int = 600
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

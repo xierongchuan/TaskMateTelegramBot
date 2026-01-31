@@ -12,6 +12,7 @@ import httpx
 
 from src.api.client import TaskMateAPI
 from src.bot import messages
+from src.storage.notifications import bulk_add_notified, clear_notified
 from src.storage.sessions import UserSession, delete_session, get_session, save_session
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,18 @@ async def cmd_login(message: Message) -> None:
         login=login,
     )
     await save_session(message.chat.id, session)
+
+    # Затушить текущие задачи, чтобы не отправлять старые уведомления
+    try:
+        authed_api = TaskMateAPI(token=token)
+        tasks_result = await authed_api.get_tasks({"per_page": 100})
+        task_ids = [t["id"] for t in tasks_result.get("data", [])]
+        if task_ids:
+            for category in ("tasks", "deadlines", "overdue"):
+                await bulk_add_notified(message.chat.id, category, task_ids)
+    except Exception:
+        logger.debug("Не удалось затушить уведомления при логине для %s", message.chat.id)
+
     await message.answer(messages.login_success(session.full_name, session.role))
 
 
@@ -86,5 +99,6 @@ async def cmd_logout(message: Message, **kwargs) -> None:
     except Exception:
         pass
 
+    await clear_notified(message.chat.id)
     await delete_session(message.chat.id)
     await message.answer(messages.logout_success())

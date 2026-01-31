@@ -1,4 +1,4 @@
-"""Точка входа TaskMateBot: запуск aiogram + APScheduler polling."""
+"""Точка входа TaskMateBot: запуск aiogram + APScheduler."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from src.bot.bot import AuthMiddleware, bot, dp
 from src.bot.handlers import auth, common, shifts, tasks
 from src.config import settings
-from src.scheduler.polling import check_deadlines, check_new_tasks, check_overdue
+from src.scheduler.polling import check_deadlines
 from src.storage import sessions
 
 logging.basicConfig(
@@ -33,29 +33,17 @@ async def main() -> None:
         r.callback_query.middleware(AuthMiddleware())
         dp.include_router(r)
 
-    # Запуск scheduler для polling уведомлений
+    # Запуск scheduler для polling дедлайнов
     async with AsyncScheduler() as scheduler:
-        await scheduler.add_schedule(
-            check_new_tasks,
-            IntervalTrigger(seconds=settings.polling_interval_new_tasks),
-            id="check_new_tasks",
-            kwargs={"bot": bot},
-        )
         await scheduler.add_schedule(
             check_deadlines,
             IntervalTrigger(seconds=settings.polling_interval_deadlines),
             id="check_deadlines",
             kwargs={"bot": bot},
         )
-        await scheduler.add_schedule(
-            check_overdue,
-            IntervalTrigger(seconds=settings.polling_interval_overdue),
-            id="check_overdue",
-            kwargs={"bot": bot},
-        )
         await scheduler.start_in_background()
 
-        logger.info("Polling scheduler запущен")
+        logger.info("Scheduler дедлайнов запущен")
 
         try:
             await dp.start_polling(bot)
