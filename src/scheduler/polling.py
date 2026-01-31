@@ -99,7 +99,7 @@ async def check_overdue(bot: Bot) -> None:
     for chat_id, session in sessions.items():
         try:
             api = TaskMateAPI(token=session.token)
-            result = await api.get_tasks({"deadline": "overdue", "per_page": 50})
+            result = await api.get_tasks({"status": "overdue", "per_page": 50})
             tasks = result.get("data", [])
 
             notified = _notified_overdue.setdefault(chat_id, set())
