@@ -27,38 +27,40 @@ class ProofUpload(StatesGroup):
 
 
 @router.message(Command("tasks"))
-async def cmd_tasks(message: Message, session: UserSession) -> None:
-    """Список активных задач пользователя."""
+async def cmd_tasks(message: Message, session: UserSession, **kwargs) -> None:
+    """Список задач за сегодня."""
+    kb = kwargs.get("reply_keyboard")
     api = TaskMateAPI(token=session.token)
     try:
-        result = await api.get_tasks({"per_page": 20})
+        result = await api.get_tasks({"date_range": "today", "per_page": 20})
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
-            await message.answer(messages.not_authorized())
+            await message.answer(messages.not_authorized(), reply_markup=kb)
         else:
-            await message.answer(messages.error_generic())
+            await message.answer(messages.error_generic(), reply_markup=kb)
         return
     except Exception:
         logger.exception("Ошибка при получении задач")
-        await message.answer(messages.error_generic())
+        await message.answer(messages.error_generic(), reply_markup=kb)
         return
 
     tasks = result.get("data", [])
-    await message.answer(messages.task_list(tasks))
+    await message.answer(messages.task_list(tasks), reply_markup=kb)
 
 
 @router.message(Command("task"))
-async def cmd_task(message: Message, session: UserSession) -> None:
+async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
     """Детали задачи по ID."""
+    reply_kb = kwargs.get("reply_keyboard")
     args = (message.text or "").split()
     if len(args) < 2:
-        await message.answer("Использование: /task <i>ID</i>")
+        await message.answer("Использование: /task <i>ID</i>", reply_markup=reply_kb)
         return
 
     try:
         task_id = int(args[1])
     except ValueError:
-        await message.answer("ID задачи должен быть числом.")
+        await message.answer("ID задачи должен быть числом.", reply_markup=reply_kb)
         return
 
     api = TaskMateAPI(token=session.token)
@@ -66,22 +68,22 @@ async def cmd_task(message: Message, session: UserSession) -> None:
         result = await api.get_task(task_id)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
-            await message.answer(f"Задача #{task_id} не найдена.")
+            await message.answer(f"Задача #{task_id} не найдена.", reply_markup=reply_kb)
         elif e.response.status_code == 401:
-            await message.answer(messages.not_authorized())
+            await message.answer(messages.not_authorized(), reply_markup=reply_kb)
         else:
-            await message.answer(messages.error_generic())
+            await message.answer(messages.error_generic(), reply_markup=reply_kb)
         return
     except Exception:
         logger.exception("Ошибка при получении задачи")
-        await message.answer(messages.error_generic())
+        await message.answer(messages.error_generic(), reply_markup=reply_kb)
         return
 
     task = result.get("data", {})
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )
-    await message.answer(messages.task_detail(task), reply_markup=kb)
+    await message.answer(messages.task_detail(task), reply_markup=kb or reply_kb)
 
 
 # --- Callback handlers ---

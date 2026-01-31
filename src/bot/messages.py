@@ -202,6 +202,47 @@ def notification_rejected(t: dict[str, Any], reason: str = "") -> str:
     return msg
 
 
+def dashboard_summary(d: dict[str, Any]) -> str:
+    lines = [
+        "📊 <b>Дашборд</b>\n",
+        f"Активных задач: {d.get('active_tasks', 0)}",
+        f"Выполнено: {d.get('completed_tasks', 0)}",
+        f"Просрочено: {d.get('overdue_tasks', 0)}",
+        f"На проверке: {d.get('pending_review_count', 0)}",
+        f"Открытых смен: {d.get('open_shifts', 0)}",
+        f"Опоздания сегодня: {d.get('late_shifts_today', 0)}",
+    ]
+    return "\n".join(lines)
+
+
+def pending_review_list(tasks: list[dict[str, Any]]) -> str:
+    if not tasks:
+        return "✅ Нет задач на проверку."
+    lines = ["✅ <b>Задачи на проверку</b>\n"]
+    for t in tasks:
+        priority_icon = _priority_icon(t.get("priority", "medium"))
+        deadline = _format_deadline(t.get("deadline"))
+        lines.append(
+            f"{priority_icon} <b>#{t['id']}</b> {t['title']}"
+            f"\n   Дедлайн: {deadline}"
+        )
+    return "\n".join(lines)
+
+
+def overdue_task_list(tasks: list[dict[str, Any]]) -> str:
+    if not tasks:
+        return "🔴 Нет просроченных задач."
+    lines = ["🔴 <b>Просроченные задачи</b>\n"]
+    for t in tasks:
+        priority_icon = _priority_icon(t.get("priority", "medium"))
+        deadline = _format_deadline(t.get("deadline"))
+        lines.append(
+            f"{priority_icon} <b>#{t['id']}</b> {t['title']}"
+            f"\n   Дедлайн: {deadline}"
+        )
+    return "\n".join(lines)
+
+
 def error_generic() -> str:
     return "⚠️ Произошла ошибка. Попробуйте позже."
 

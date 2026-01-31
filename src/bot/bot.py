@@ -10,6 +10,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import Message, CallbackQuery, TelegramObject
 
+from src.bot import keyboards
 from src.config import settings
 from src.storage.sessions import get_session
 
@@ -64,4 +65,19 @@ class AuthMiddleware(BaseMiddleware):
                 return
             data["session"] = session
 
+        return await handler(event, data)
+
+
+class ReplyKeyboardMiddleware(BaseMiddleware):
+    """Передаёт reply_keyboard через data для автоматического прикрепления меню."""
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        session = data.get("session")
+        if session:
+            data["reply_keyboard"] = keyboards.main_menu(session.role)
         return await handler(event, data)

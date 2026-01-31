@@ -8,8 +8,8 @@ import logging
 from apscheduler import AsyncScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from src.bot.bot import AuthMiddleware, bot, dp
-from src.bot.handlers import auth, common, shifts, tasks
+from src.bot.bot import AuthMiddleware, ReplyKeyboardMiddleware, bot, dp
+from src.bot.handlers import auth, common, menu, shifts, tasks
 from src.config import settings
 from src.scheduler.polling import check_deadlines
 from src.storage import sessions
@@ -28,8 +28,9 @@ async def main() -> None:
     dp.include_router(common.router)
 
     # Роутеры, требующие авторизации
-    for r in (auth.router, tasks.router, shifts.router):
+    for r in (auth.router, tasks.router, shifts.router, menu.router):
         r.message.middleware(AuthMiddleware())
+        r.message.middleware(ReplyKeyboardMiddleware())
         r.callback_query.middleware(AuthMiddleware())
         dp.include_router(r)
 

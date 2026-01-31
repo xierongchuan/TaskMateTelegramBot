@@ -11,7 +11,7 @@ from aiogram.types import Message
 import httpx
 
 from src.api.client import TaskMateAPI
-from src.bot import messages
+from src.bot import keyboards, messages
 from src.storage.notifications import bulk_add_notified, clear_notified
 from src.storage.sessions import UserSession, delete_session, get_session, save_session
 
@@ -82,7 +82,10 @@ async def cmd_login(message: Message) -> None:
     except Exception:
         logger.debug("Не удалось затушить уведомления при логине для %s", message.chat.id)
 
-    await message.answer(messages.login_success(session.full_name, session.role))
+    await message.answer(
+        messages.login_success(session.full_name, session.role),
+        reply_markup=keyboards.main_menu(session.role),
+    )
 
 
 @router.message(Command("logout"))
@@ -101,4 +104,4 @@ async def cmd_logout(message: Message, **kwargs) -> None:
 
     await clear_notified(message.chat.id)
     await delete_session(message.chat.id)
-    await message.answer(messages.logout_success())
+    await message.answer(messages.logout_success(), reply_markup=keyboards.remove_menu())

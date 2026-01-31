@@ -1,8 +1,51 @@
-"""Inline-клавиатуры для бота."""
+"""Клавиатуры для бота: inline и reply."""
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
+
+# --- Тексты кнопок меню ---
+
+BTN_MY_TASKS = "📋 Мои задачи"
+BTN_TASKS = "📋 Задачи"
+BTN_MY_SHIFT = "🕐 Моя смена"
+BTN_SHIFTS = "🕐 Смены"
+BTN_PENDING_REVIEW = "✅ На проверку"
+BTN_OVERDUE = "🔴 Просрочены"
+BTN_DASHBOARD = "📊 Дашборд"
+BTN_LOGOUT = "🚪 Выход"
+
+
+def main_menu(role: str) -> ReplyKeyboardMarkup:
+    """Главное меню с кнопками по роли."""
+    if role == "employee":
+        rows = [
+            [KeyboardButton(text=BTN_MY_TASKS), KeyboardButton(text=BTN_MY_SHIFT)],
+            [KeyboardButton(text=BTN_DASHBOARD), KeyboardButton(text=BTN_LOGOUT)],
+        ]
+    elif role == "observer":
+        rows = [
+            [KeyboardButton(text=BTN_TASKS), KeyboardButton(text=BTN_SHIFTS)],
+            [KeyboardButton(text=BTN_DASHBOARD), KeyboardButton(text=BTN_LOGOUT)],
+        ]
+    else:  # manager, owner
+        rows = [
+            [KeyboardButton(text=BTN_TASKS), KeyboardButton(text=BTN_PENDING_REVIEW)],
+            [KeyboardButton(text=BTN_OVERDUE), KeyboardButton(text=BTN_SHIFTS)],
+            [KeyboardButton(text=BTN_DASHBOARD), KeyboardButton(text=BTN_LOGOUT)],
+        ]
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def remove_menu() -> ReplyKeyboardRemove:
+    """Убрать клавиатуру."""
+    return ReplyKeyboardRemove()
 
 
 def task_actions(task_id: int, response_type: str, status: str) -> InlineKeyboardMarkup | None:
