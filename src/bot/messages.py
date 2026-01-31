@@ -205,13 +205,77 @@ def notification_rejected(t: dict[str, Any], reason: str = "") -> str:
 def dashboard_summary(d: dict[str, Any]) -> str:
     lines = [
         "📊 <b>Дашборд</b>\n",
-        f"Активных задач: {d.get('active_tasks', 0)}",
-        f"Выполнено: {d.get('completed_tasks', 0)}",
-        f"Просрочено: {d.get('overdue_tasks', 0)}",
-        f"На проверке: {d.get('pending_review_count', 0)}",
-        f"Открытых смен: {d.get('open_shifts', 0)}",
-        f"Опоздания сегодня: {d.get('late_shifts_today', 0)}",
+        "━━━━━━━━━━━━━━━━━━",
+        "<b>📋 Задачи</b>",
+        f"  Активных: {d.get('active_tasks', 0)}",
+        f"  Выполнено: {d.get('completed_tasks', 0)}",
+        f"  Просрочено: {d.get('overdue_tasks', 0)}",
+        f"  На проверке: {d.get('pending_review_count', 0)}",
+        "",
+        "<b>🕐 Смены</b>",
+        f"  Открытых: {d.get('open_shifts', 0)}",
+        f"  Опоздания сегодня: {d.get('late_shifts_today', 0)}",
     ]
+
+    # Генераторы
+    if d.get("total_generators") or d.get("tasks_generated_today"):
+        lines.append("")
+        lines.append("<b>⚙️ Генераторы</b>")
+        lines.append(f"  Активных: {d.get('active_generators', 0)} / {d.get('total_generators', 0)}")
+        lines.append(f"  Создано задач сегодня: {d.get('tasks_generated_today', 0)}")
+
+    # Просроченные задачи
+    overdue = d.get("overdue_tasks_list", [])
+    if overdue:
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━")
+        lines.append("🔴 <b>Просроченные задачи</b>\n")
+        for t in overdue[:5]:
+            pri = _priority_icon(t.get("priority", "medium"))
+            deadline = _format_deadline(t.get("deadline"))
+            lines.append(f"  {pri} <b>#{t['id']}</b> {t.get('title', '')}")
+            lines.append(f"     Дедлайн: {deadline}")
+
+    # На проверке
+    pending = d.get("pending_review_tasks", [])
+    if pending:
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━")
+        lines.append("🟡 <b>На проверке</b>\n")
+        for t in pending[:5]:
+            pri = _priority_icon(t.get("priority", "medium"))
+            lines.append(f"  {pri} <b>#{t['id']}</b> {t.get('title', '')}")
+
+    # Активные смены
+    shifts = d.get("active_shifts", [])
+    if shifts:
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━")
+        lines.append("🟢 <b>Активные смены</b>\n")
+        for s in shifts[:5]:
+            user = s.get("user", {})
+            name = user.get("full_name", "—")
+            dealer = s.get("dealership", {}).get("name", "")
+            status = s.get("status", "")
+            icon = {"open": "🟢", "late": "🟡"}.get(status, "⚪")
+            line = f"  {icon} {name}"
+            if dealer:
+                line += f" — {dealer}"
+            lines.append(line)
+
+    # Статистика по автосалонам
+    dealer_stats = d.get("dealership_shift_stats", [])
+    if dealer_stats:
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━")
+        lines.append("🏢 <b>Автосалоны</b>\n")
+        for ds in dealer_stats[:5]:
+            name = ds.get("name", "—")
+            total = ds.get("total_shifts", 0)
+            on_time = ds.get("on_time", 0)
+            late = ds.get("late", 0)
+            lines.append(f"  <b>{name}</b>: {total} смен ({on_time} вовремя, {late} опозд.)")
+
     return "\n".join(lines)
 
 
