@@ -30,12 +30,8 @@ async def btn_tasks(message: Message, session: UserSession, **kwargs) -> None:
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_tasks({"date_range": "today", "per_page": 20})
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении задач")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -55,11 +51,8 @@ async def btn_my_shift(message: Message, session: UserSession, **kwargs) -> None
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             await message.answer(messages.no_current_shift(), reply_markup=kb)
-        elif e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+            return
+        raise
     except Exception:
         logger.exception("Ошибка при получении смены")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -79,12 +72,8 @@ async def btn_shifts(message: Message, session: UserSession, **kwargs) -> None:
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_my_shifts({"per_page": 10})
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении смен")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -101,12 +90,8 @@ async def btn_dashboard(message: Message, session: UserSession, **kwargs) -> Non
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_dashboard()
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении дашборда")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -123,12 +108,8 @@ async def btn_pending_review(message: Message, session: UserSession, **kwargs) -
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_tasks({"status": "pending_review", "date_range": "today", "per_page": 20})
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении задач на проверку")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -145,12 +126,8 @@ async def btn_overdue(message: Message, session: UserSession, **kwargs) -> None:
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_tasks({"status": "overdue", "per_page": 20})
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении просроченных задач")
         await message.answer(messages.error_generic(), reply_markup=kb)

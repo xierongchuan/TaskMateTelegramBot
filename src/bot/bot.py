@@ -10,9 +10,12 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import Message, CallbackQuery, TelegramObject
 
+import httpx
+
 from src.bot import keyboards
 from src.config import settings
-from src.storage.sessions import get_session
+from src.storage.notifications import clear_notified
+from src.storage.sessions import delete_session, get_session
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +68,24 @@ class AuthMiddleware(BaseMiddleware):
                 return
             data["session"] = session
 
-        return await handler(event, data)
+        try:
+            return await handler(event, data)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and chat_id is not None:
+                await delete_session(chat_id)
+                await clear_notified(chat_id)
+                logger.info("Сессия просрочена для chat_id=%s, сессия удалена", chat_id)
+
+                from src.bot import messages
+                if isinstance(event, Message):
+                    await event.answer(
+                        messages.not_authorized(),
+                        reply_markup=keyboards.remove_menu(),
+                    )
+                elif isinstance(event, CallbackQuery):
+                    await event.answer("Сессия истекла. Используйте /login", show_alert=True)
+                return
+            raise
 
 
 class ReplyKeyboardMiddleware(BaseMiddleware):

@@ -33,12 +33,8 @@ async def cmd_tasks(message: Message, session: UserSession, **kwargs) -> None:
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_tasks({"date_range": "today", "per_page": 20})
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении задач")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -69,11 +65,8 @@ async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             await message.answer(f"Задача #{task_id} не найдена.", reply_markup=reply_kb)
-        elif e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=reply_kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=reply_kb)
-        return
+            return
+        raise
     except Exception:
         logger.exception("Ошибка при получении задачи")
         await message.answer(messages.error_generic(), reply_markup=reply_kb)

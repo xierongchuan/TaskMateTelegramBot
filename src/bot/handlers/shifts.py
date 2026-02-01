@@ -28,11 +28,8 @@ async def cmd_shift(message: Message, session: UserSession, **kwargs) -> None:
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             await message.answer(messages.no_current_shift(), reply_markup=kb)
-        elif e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+            return
+        raise
     except Exception:
         logger.exception("Ошибка при получении смены")
         await message.answer(messages.error_generic(), reply_markup=kb)
@@ -52,12 +49,8 @@ async def cmd_shifts(message: Message, session: UserSession, **kwargs) -> None:
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_my_shifts({"per_page": 10})
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            await message.answer(messages.not_authorized(), reply_markup=kb)
-        else:
-            await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    except httpx.HTTPStatusError:
+        raise
     except Exception:
         logger.exception("Ошибка при получении смен")
         await message.answer(messages.error_generic(), reply_markup=kb)
