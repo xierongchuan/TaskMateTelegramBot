@@ -119,6 +119,24 @@ def task_list_item(task_id: int) -> InlineKeyboardMarkup:
     )
 
 
+def review_actions(response_id: int) -> InlineKeyboardMarkup:
+    """Кнопки одобрения/отклонения для задачи на проверке."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Одобрить",
+                    callback_data=f"review_approve:{response_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить",
+                    callback_data=f"review_reject:{response_id}",
+                ),
+            ]
+        ]
+    )
+
+
 def notification_task_actions(task_id: int, response_type: str) -> InlineKeyboardMarkup | None:
     """Кнопки для уведомления о новой задаче."""
     return task_actions(task_id, response_type, "pending")

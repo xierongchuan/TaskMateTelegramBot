@@ -307,6 +307,102 @@ def overdue_task_list(tasks: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def review_task_card(t: dict[str, Any], response: dict[str, Any] | None = None) -> str:
+    """Карточка задачи на проверке для менеджера."""
+    priority_icon = _priority_icon(t.get("priority", "medium"))
+    deadline = _format_deadline(t.get("deadline"))
+
+    # Исполнитель
+    user_name = "—"
+    if response and response.get("user"):
+        user_name = response["user"].get("full_name", "—")
+
+    # Количество файлов (individual или shared)
+    proofs_count = 0
+    if response:
+        proofs_count = len(response.get("proofs", []))
+        if not proofs_count and response.get("uses_shared_proofs"):
+            proofs_count = len(t.get("shared_proofs", []))
+
+    lines = [
+        f"🟡 {priority_icon} <b>Задача #{t['id']} — На проверке</b>",
+        f"<b>{t.get('title', '')}</b>",
+    ]
+    if t.get("description"):
+        lines.append(t["description"])
+    lines.extend([
+        "",
+        f"Исполнитель: {user_name}",
+        f"Дедлайн: {deadline}",
+    ])
+    if proofs_count:
+        lines.append(f"Файлов: {proofs_count}")
+    if response and response.get("comment"):
+        lines.append(f"Комментарий: {response['comment']}")
+    return "\n".join(lines)
+
+
+def review_approved_msg(task_id: int) -> str:
+    return f"✅ Задача #{task_id} <b>одобрена</b>."
+
+
+def review_rejected_msg(task_id: int, reason: str = "") -> str:
+    msg = f"❌ Задача #{task_id} <b>отклонена</b>."
+    if reason:
+        msg += f"\nПричина: {reason}"
+    return msg
+
+
+def rejection_reason_prompt() -> str:
+    return "✏️ Укажите причину отклонения:"
+
+
+def notification_pending_review(t: dict[str, Any], submitted_by: str = "") -> str:
+    """Уведомление менеджеру о новой задаче на проверку."""
+    priority_icon = _priority_icon(t.get("priority", "medium"))
+    deadline = _format_deadline(t.get("deadline"))
+    lines = [
+        f"📋 <b>Новая задача на проверку #{t['id']}</b>",
+        "",
+        f"{priority_icon} {t.get('title', '')}",
+        f"Дедлайн: {deadline}",
+    ]
+    if submitted_by:
+        lines.append(f"Отправил: {submitted_by}")
+    return "\n".join(lines)
+
+
+def shift_card_for_manager(s: dict[str, Any]) -> str:
+    """Карточка смены для менеджера."""
+    user_name = s.get("user", {}).get("full_name", "—")
+    dealership = s.get("dealership", {}).get("name", "—")
+    start = _format_datetime(s.get("shift_start"))
+    sched_start = _format_datetime(s.get("scheduled_start"))
+    sched_end = _format_datetime(s.get("scheduled_end"))
+    status = s.get("status", "")
+    late_min = s.get("late_minutes", 0)
+
+    status_labels = {
+        "open": "🟢 Вовремя",
+        "late": f"🟡 Опоздание ({late_min} мин)",
+        "closed": "⚪ Закрыта",
+        "replaced": "🔄 Замена",
+    }
+    status_text = status_labels.get(status, status)
+
+    lines = [
+        f"<b>{user_name}</b> — {dealership}",
+        f"Открыта: {start}",
+        f"Расписание: {sched_start} – {sched_end}",
+        f"Статус: {status_text}",
+    ]
+    return "\n".join(lines)
+
+
+def no_open_shifts() -> str:
+    return "ℹ️ Нет открытых смен на сегодня."
+
+
 def error_generic() -> str:
     return "⚠️ Произошла ошибка. Попробуйте позже."
 

@@ -142,6 +142,68 @@ class TaskMateAPI:
         resp.raise_for_status()
         return resp.json()
 
+    # --- Верификация задач (manager/owner) ---
+
+    async def approve_response(self, response_id: int) -> dict[str, Any]:
+        """POST /task-responses/{id}/approve — одобрить ответ."""
+        resp = await self._request("POST", f"/task-responses/{response_id}/approve")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def reject_response(
+        self, response_id: int, reason: str
+    ) -> dict[str, Any]:
+        """POST /task-responses/{id}/reject — отклонить ответ."""
+        resp = await self._request(
+            "POST",
+            f"/task-responses/{response_id}/reject",
+            json={"reason": reason},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    # --- Смены (все) ---
+
+    async def get_shifts(
+        self, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """GET /shifts — список всех смен."""
+        resp = await self._request("GET", "/shifts", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_shift(self, shift_id: int) -> dict[str, Any]:
+        """GET /shifts/{id} — детали смены."""
+        resp = await self._request("GET", f"/shifts/{shift_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def download_shift_photo(
+        self, shift_id: int, photo_type: str
+    ) -> bytes | None:
+        """GET /shift-photos/{id}/{type} — скачать фото смены."""
+        try:
+            resp = await self._request(
+                "GET", f"/shift-photos/{shift_id}/{photo_type}"
+            )
+            if resp.status_code == 200:
+                return resp.content
+        except Exception:
+            logger.debug("Фото смены %s/%s недоступно", shift_id, photo_type)
+        return None
+
+    async def download_proof_by_url(self, url: str) -> bytes | None:
+        """Скачать файл по signed URL (proof или shared proof)."""
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                resp = await client.get(url, headers=self._headers())
+                if resp.status_code == 200:
+                    return resp.content
+                logger.debug("Proof download failed: %s -> %s", url, resp.status_code)
+        except Exception:
+            logger.debug("Proof download error: %s", url)
+        return None
+
     # --- Dashboard ---
 
     async def get_dashboard(

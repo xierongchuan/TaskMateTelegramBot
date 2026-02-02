@@ -67,20 +67,24 @@ async def btn_my_shift(message: Message, session: UserSession, **kwargs) -> None
 
 @router.message(F.text == keyboards.BTN_SHIFTS)
 async def btn_shifts(message: Message, session: UserSession, **kwargs) -> None:
-    """Мои смены."""
+    """Смены — для менеджеров показать открытые с фото, для остальных — свои."""
     kb = _kb(kwargs)
-    api = TaskMateAPI(token=session.token)
-    try:
-        result = await api.get_my_shifts({"per_page": 10})
-    except httpx.HTTPStatusError:
-        raise
-    except Exception:
-        logger.exception("Ошибка при получении смен")
-        await message.answer(messages.error_generic(), reply_markup=kb)
-        return
+    if session.role in ("manager", "owner"):
+        from src.bot.handlers.shifts import send_manager_shifts
+        await send_manager_shifts(message, session, reply_kb=kb)
+    else:
+        api = TaskMateAPI(token=session.token)
+        try:
+            result = await api.get_my_shifts({"per_page": 10})
+        except httpx.HTTPStatusError:
+            raise
+        except Exception:
+            logger.exception("Ошибка при получении смен")
+            await message.answer(messages.error_generic(), reply_markup=kb)
+            return
 
-    shifts = result.get("data", [])
-    await message.answer(messages.shift_list(shifts), reply_markup=kb)
+        shifts = result.get("data", [])
+        await message.answer(messages.shift_list(shifts), reply_markup=kb)
 
 
 @router.message(F.text == keyboards.BTN_DASHBOARD)
@@ -103,20 +107,9 @@ async def btn_dashboard(message: Message, session: UserSession, **kwargs) -> Non
 
 @router.message(F.text == keyboards.BTN_PENDING_REVIEW)
 async def btn_pending_review(message: Message, session: UserSession, **kwargs) -> None:
-    """Задачи на проверку (manager/owner)."""
-    kb = _kb(kwargs)
-    api = TaskMateAPI(token=session.token)
-    try:
-        result = await api.get_tasks({"status": "pending_review", "date_range": "today", "per_page": 20})
-    except httpx.HTTPStatusError:
-        raise
-    except Exception:
-        logger.exception("Ошибка при получении задач на проверку")
-        await message.answer(messages.error_generic(), reply_markup=kb)
-        return
-
-    tasks = result.get("data", [])
-    await message.answer(messages.pending_review_list(tasks), reply_markup=kb)
+    """Задачи на проверку (manager/owner) — каждая отдельным сообщением."""
+    from src.bot.handlers.review import send_review_list
+    await send_review_list(message, session, reply_kb=_kb(kwargs))
 
 
 @router.message(F.text == keyboards.BTN_OVERDUE)

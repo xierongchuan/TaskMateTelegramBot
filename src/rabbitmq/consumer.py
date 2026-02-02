@@ -86,7 +86,7 @@ async def _handle_message(bot: Bot, body: bytes) -> None:
             continue
 
         # Определить категорию для дедупликации
-        category = "tasks"
+        category = "reviews" if event == "task.pending_review" else "tasks"
 
         if await is_notified(chat_id, category, task_id):
             continue
@@ -101,6 +101,10 @@ async def _handle_message(bot: Bot, body: bytes) -> None:
                 kwargs["reply_markup"] = keyboards.notification_task_actions(
                     task_id, task.get("response_type", "")
                 )
+            elif event == "task.pending_review":
+                response_id = payload.get("response_id")
+                if response_id:
+                    kwargs["reply_markup"] = keyboards.review_actions(response_id)
             await bot.send_message(chat_id, text, **kwargs)
             await add_notified(chat_id, category, task_id)
         except Exception:
@@ -111,6 +115,10 @@ def _format_message(event: str, task: dict, payload: dict) -> str | None:
     """Сформировать текст уведомления по типу события."""
     if event == "task.assigned":
         return messages.notification_new_task(task)
+    if event == "task.pending_review":
+        return messages.notification_pending_review(
+            task, payload.get("submitted_by", "")
+        )
     if event == "task.approved":
         return messages.notification_approved(task)
     if event == "task.rejected":
