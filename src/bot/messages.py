@@ -307,47 +307,91 @@ def overdue_task_list(tasks: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def review_task_card(t: dict[str, Any], response: dict[str, Any] | None = None) -> str:
-    """Карточка задачи на проверке для менеджера."""
+def review_task_card(
+    t: dict[str, Any],
+    responses: list[dict[str, Any]] | None = None,
+    response: dict[str, Any] | None = None,
+) -> str:
+    """Карточка задачи на проверке для менеджера.
+
+    responses — список pending_review responses (для групповых задач).
+    response — одиночный response (обратная совместимость / индивидуальный просмотр).
+    """
     priority_icon = _priority_icon(t.get("priority", "medium"))
     deadline = _format_deadline(t.get("deadline"))
 
-    # Исполнитель
-    user_name = "—"
-    if response and response.get("user"):
-        user_name = response["user"].get("full_name", "—")
+    # Собираем список pending responses
+    pending = responses or ([response] if response else [])
 
-    # Количество файлов (individual или shared)
+    # Количество файлов
     proofs_count = 0
-    if response:
-        proofs_count = len(response.get("proofs", []))
-        if not proofs_count and response.get("uses_shared_proofs"):
+    if pending:
+        first = pending[0]
+        proofs_count = len(first.get("proofs", []))
+        if not proofs_count and first.get("uses_shared_proofs"):
             proofs_count = len(t.get("shared_proofs", []))
 
+    is_group = len(pending) > 1
+
     lines = [
-        f"🟡 {priority_icon} <b>Задача #{t['id']} — На проверке</b>",
+        f"🟡 {priority_icon} <b>Задача #{t['id']}</b>",
         f"<b>{t.get('title', '')}</b>",
     ]
     if t.get("description"):
-        lines.append(t["description"])
-    lines.extend([
-        "",
-        f"Исполнитель: {user_name}",
-        f"Дедлайн: {deadline}",
-    ])
+        desc = t["description"]
+        if len(desc) > 150:
+            desc = desc[:147] + "..."
+        lines.append(f"<i>{desc}</i>")
+
+    lines.append("")
+
+    # Все responses задачи (не только pending)
+    all_responses = t.get("responses", [])
+    rejected = [r for r in all_responses if r.get("status") == "rejected"]
+    completed = [r for r in all_responses if r.get("status") == "completed"]
+
+    if is_group:
+        lines.append(f"👥 <b>Групповая</b> — на проверке: {len(pending)}")
+        for r in pending:
+            name = r.get("user", {}).get("full_name", "—")
+            lines.append(f"  🟡 {name}")
+        if rejected:
+            for r in rejected:
+                name = r.get("user", {}).get("full_name", "—")
+                lines.append(f"  ❌ {name} — отклонено")
+        if completed:
+            for r in completed:
+                name = r.get("user", {}).get("full_name", "—")
+                lines.append(f"  ✅ {name} — выполнено")
+    else:
+        name = "—"
+        if pending and pending[0].get("user"):
+            name = pending[0]["user"].get("full_name", "—")
+        lines.append(f"👤 Исполнитель: {name}")
+
+    lines.append(f"📅 Дедлайн: {deadline}")
+
     if proofs_count:
-        lines.append(f"Файлов: {proofs_count}")
-    if response and response.get("comment"):
-        lines.append(f"Комментарий: {response['comment']}")
+        lines.append(f"📎 Файлов: {proofs_count}")
+
+    # Комментарий (для одиночных)
+    if not is_group and pending and pending[0].get("comment"):
+        lines.append(f"💬 {pending[0]['comment']}")
+
     return "\n".join(lines)
 
 
-def review_approved_msg(task_id: int) -> str:
+def review_approved_msg(task_id: int, count: int = 1) -> str:
+    if count > 1:
+        return f"✅ Задача #{task_id} <b>одобрена</b> для {count} исполнителей."
     return f"✅ Задача #{task_id} <b>одобрена</b>."
 
 
-def review_rejected_msg(task_id: int, reason: str = "") -> str:
-    msg = f"❌ Задача #{task_id} <b>отклонена</b>."
+def review_rejected_msg(task_id: int, reason: str = "", count: int = 1) -> str:
+    if count > 1:
+        msg = f"❌ Задача #{task_id} <b>отклонена</b> для {count} исполнителей."
+    else:
+        msg = f"❌ Задача #{task_id} <b>отклонена</b>."
     if reason:
         msg += f"\nПричина: {reason}"
     return msg

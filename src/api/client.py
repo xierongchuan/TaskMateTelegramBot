@@ -162,6 +162,18 @@ class TaskMateAPI:
         resp.raise_for_status()
         return resp.json()
 
+    async def reject_all_responses(
+        self, task_id: int, reason: str
+    ) -> dict[str, Any]:
+        """POST /tasks/{id}/reject-all-responses — отклонить все ответы задачи."""
+        resp = await self._request(
+            "POST",
+            f"/tasks/{task_id}/reject-all-responses",
+            json={"reason": reason},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     # --- Смены (все) ---
 
     async def get_shifts(

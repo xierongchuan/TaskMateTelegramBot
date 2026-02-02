@@ -120,7 +120,7 @@ def task_list_item(task_id: int) -> InlineKeyboardMarkup:
 
 
 def review_actions(response_id: int) -> InlineKeyboardMarkup:
-    """Кнопки одобрения/отклонения для задачи на проверке."""
+    """Кнопки одобрения/отклонения для одиночной задачи на проверке."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -133,6 +133,30 @@ def review_actions(response_id: int) -> InlineKeyboardMarkup:
                     callback_data=f"review_reject:{response_id}",
                 ),
             ]
+        ]
+    )
+
+
+def review_group_actions(task_id: int) -> InlineKeyboardMarkup:
+    """Кнопки для групповой задачи на проверке."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Одобрить всем",
+                    callback_data=f"review_approve_all:{task_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить всем",
+                    callback_data=f"review_reject_all:{task_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📋 Индивидуально",
+                    callback_data=f"review_individual:{task_id}",
+                ),
+            ],
         ]
     )
 

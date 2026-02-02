@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 from typing import Any
 
@@ -24,6 +23,65 @@ router = Router()
 class RejectReason(StatesGroup):
     """FSM: ожидание причины отклонения."""
     waiting = State()
+
+
+# --- Helpers ---
+
+
+def _find_pending_responses(task: dict[str, Any]) -> list[dict[str, Any]]:
+    """Все responses со статусом pending_review."""
+    return [r for r in task.get("responses", []) if r.get("status") == "pending_review"]
+
+
+def _get_first_proof_url(task: dict[str, Any], responses: list[dict[str, Any]]) -> str | None:
+    """URL первого image proof (individual или shared)."""
+    for r in responses:
+        for p in r.get("proofs", []):
+            if p.get("mime_type", "").startswith("image/") and p.get("url"):
+                return p["url"]
+    # Shared proofs
+    for p in task.get("shared_proofs", []):
+        if p.get("mime_type", "").startswith("image/") and p.get("url"):
+            return p["url"]
+    return None
+
+
+async def _send_task_card(
+    message: Message,
+    api: TaskMateAPI,
+    task: dict[str, Any],
+    pending: list[dict[str, Any]],
+    kb: Any,
+) -> None:
+    """Отправить карточку задачи с фото (если есть)."""
+    text = messages.review_task_card(task, responses=pending)
+    photo_url = _get_first_proof_url(task, pending)
+
+    if photo_url:
+        try:
+            photo_bytes = await api.download_proof_by_url(photo_url)
+            if photo_bytes:
+                photo = BufferedInputFile(photo_bytes, filename="proof.jpg")
+                await message.answer_photo(photo=photo, caption=text, reply_markup=kb)
+                return
+        except Exception:
+            logger.debug("Не удалось отправить фото для задачи %s", task.get("id"))
+
+    await message.answer(text, reply_markup=kb)
+
+
+async def _edit_result(callback: CallbackQuery, text: str) -> None:
+    """Обновить сообщение — убрать кнопки и показать результат."""
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(caption=text, reply_markup=None)
+        else:
+            await callback.message.edit_text(text, reply_markup=None)
+    except Exception:
+        await callback.message.answer(text)
+
+
+# --- Main list ---
 
 
 async def send_review_list(
@@ -48,60 +106,27 @@ async def send_review_list(
         await message.answer("✅ Нет задач на проверку.", reply_markup=reply_kb)
         return
 
+    # Группируем по задачам (не по response)
     for task in tasks:
-        # Найти response со статусом pending_review
-        response = _find_pending_review_response(task)
-        if not response:
+        pending = _find_pending_responses(task)
+        if not pending:
             continue
 
-        response_id = response["id"]
-        text = messages.review_task_card(task, response)
-        kb = keyboards.review_actions(response_id)
+        is_group = len(pending) > 1
+        if is_group:
+            kb = keyboards.review_group_actions(task["id"])
+        else:
+            kb = keyboards.review_actions(pending[0]["id"])
 
-        # Попытаться отправить с фото доказательства
-        # Для shared submissions проверяем task.shared_proofs
-        photo_sent = False
-        is_shared = False
-        proofs = response.get("proofs", [])
-        if not proofs and response.get("uses_shared_proofs"):
-            proofs = task.get("shared_proofs", [])
-            is_shared = True
-        if proofs:
-            first_proof = proofs[0]
-            mime = first_proof.get("mime_type", "")
-            if mime.startswith("image/") and first_proof.get("url"):
-                try:
-                    photo_bytes = await api.download_proof_by_url(first_proof["url"])
-                    if photo_bytes:
-                        photo = BufferedInputFile(
-                            photo_bytes,
-                            filename=first_proof.get("original_filename", "proof.jpg"),
-                        )
-                        await message.answer_photo(
-                            photo=photo, caption=text, reply_markup=kb
-                        )
-                        photo_sent = True
-                except Exception:
-                    logger.debug("Не удалось отправить фото proof %s", first_proof.get("id"))
-
-        if not photo_sent:
-            await message.answer(text, reply_markup=kb)
+        await _send_task_card(message, api, task, pending, kb)
 
 
-def _find_pending_review_response(task: dict[str, Any]) -> dict[str, Any] | None:
-    """Найти первый response со статусом pending_review."""
-    for r in task.get("responses", []):
-        if r.get("status") == "pending_review":
-            return r
-    return None
-
-
-# --- Callback handlers ---
+# --- Single response callbacks (unchanged) ---
 
 
 @router.callback_query(F.data.startswith("review_approve:"))
 async def cb_review_approve(callback: CallbackQuery, session: UserSession) -> None:
-    """Одобрить задачу."""
+    """Одобрить одиночный ответ."""
     response_id = int(callback.data.split(":")[1])
     api = TaskMateAPI(token=session.token)
     try:
@@ -119,17 +144,8 @@ async def cb_review_approve(callback: CallbackQuery, session: UserSession) -> No
         return
 
     task = result.get("data", {})
-    task_id = task.get("id", "?")
-    text = messages.review_approved_msg(task_id)
-
-    # Обновить сообщение — убрать кнопки
-    try:
-        if callback.message.photo:
-            await callback.message.edit_caption(caption=text, reply_markup=None)
-        else:
-            await callback.message.edit_text(text, reply_markup=None)
-    except Exception:
-        await callback.message.answer(text)
+    text = messages.review_approved_msg(task.get("id", "?"))
+    await _edit_result(callback, text)
     await callback.answer("✅ Одобрено")
 
 
@@ -137,10 +153,11 @@ async def cb_review_approve(callback: CallbackQuery, session: UserSession) -> No
 async def cb_review_reject(
     callback: CallbackQuery, session: UserSession, state: FSMContext
 ) -> None:
-    """Начать отклонение — запросить причину."""
+    """Начать отклонение одиночного ответа — запросить причину."""
     response_id = int(callback.data.split(":")[1])
     await state.set_state(RejectReason.waiting)
     await state.update_data(
+        mode="single",
         response_id=response_id,
         original_message_id=callback.message.message_id,
         has_photo=bool(callback.message.photo),
@@ -149,13 +166,128 @@ async def cb_review_reject(
     await callback.answer()
 
 
+# --- Group task callbacks ---
+
+
+@router.callback_query(F.data.startswith("review_approve_all:"))
+async def cb_review_approve_all(callback: CallbackQuery, session: UserSession) -> None:
+    """Одобрить все pending_review ответы задачи."""
+    task_id = int(callback.data.split(":")[1])
+    api = TaskMateAPI(token=session.token)
+
+    # Получить задачу чтобы найти все pending responses
+    try:
+        result = await api.get_tasks({"status": "pending_review", "per_page": 50})
+    except Exception:
+        await callback.answer("Ошибка при загрузке", show_alert=True)
+        return
+
+    task = None
+    for t in result.get("data", []):
+        if t["id"] == task_id:
+            task = t
+            break
+
+    if not task:
+        await callback.answer("Задача не найдена", show_alert=True)
+        return
+
+    pending = _find_pending_responses(task)
+    if not pending:
+        await callback.answer("Нет ответов на проверке", show_alert=True)
+        return
+
+    # Одобрить каждый response
+    approved = 0
+    for r in pending:
+        try:
+            await api.approve_response(r["id"])
+            approved += 1
+        except Exception:
+            logger.debug("Не удалось одобрить response %s", r["id"])
+
+    text = messages.review_approved_msg(task_id, count=approved)
+    await _edit_result(callback, text)
+    await callback.answer(f"✅ Одобрено: {approved}")
+
+
+@router.callback_query(F.data.startswith("review_reject_all:"))
+async def cb_review_reject_all(
+    callback: CallbackQuery, session: UserSession, state: FSMContext
+) -> None:
+    """Начать отклонение всех ответов — запросить причину."""
+    task_id = int(callback.data.split(":")[1])
+    await state.set_state(RejectReason.waiting)
+    await state.update_data(
+        mode="all",
+        task_id=task_id,
+        original_message_id=callback.message.message_id,
+        has_photo=bool(callback.message.photo),
+    )
+    await callback.message.answer(messages.rejection_reason_prompt())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("review_individual:"))
+async def cb_review_individual(callback: CallbackQuery, session: UserSession) -> None:
+    """Показать каждый response отдельным сообщением с индивидуальными кнопками."""
+    task_id = int(callback.data.split(":")[1])
+    api = TaskMateAPI(token=session.token)
+
+    try:
+        result = await api.get_tasks({"status": "pending_review", "per_page": 50})
+    except Exception:
+        await callback.answer("Ошибка при загрузке", show_alert=True)
+        return
+
+    task = None
+    for t in result.get("data", []):
+        if t["id"] == task_id:
+            task = t
+            break
+
+    if not task:
+        await callback.answer("Задача не найдена", show_alert=True)
+        return
+
+    pending = _find_pending_responses(task)
+    if not pending:
+        await callback.answer("Нет ответов на проверке", show_alert=True)
+        return
+
+    # Обновить исходное сообщение — убрать кнопки
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(
+                caption=callback.message.caption + "\n\n📋 <i>Индивидуальный просмотр:</i>",
+                reply_markup=None,
+            )
+        else:
+            await callback.message.edit_text(
+                callback.message.text + "\n\n📋 <i>Индивидуальный просмотр:</i>",
+                reply_markup=None,
+            )
+    except Exception:
+        pass
+
+    # Отправить каждый response отдельным сообщением
+    for r in pending:
+        kb = keyboards.review_actions(r["id"])
+        await _send_task_card(callback.message, api, task, [r], kb)
+
+    await callback.answer()
+
+
+# --- FSM: получение причины отклонения ---
+
+
 @router.message(RejectReason.waiting, F.text)
 async def on_reject_reason(
     message: Message, session: UserSession, state: FSMContext
 ) -> None:
     """Получить причину отклонения и отправить reject."""
     data = await state.get_data()
-    response_id = data["response_id"]
+    mode = data.get("mode", "single")
     reason = message.text.strip()
 
     if not reason:
@@ -163,26 +295,49 @@ async def on_reject_reason(
         return
 
     api = TaskMateAPI(token=session.token)
-    try:
-        result = await api.reject_response(response_id, reason)
-    except httpx.HTTPStatusError as e:
-        error_msg = "Ошибка"
-        try:
-            error_msg = e.response.json().get("message", error_msg)
-        except Exception:
-            pass
-        await message.answer(f"⚠️ {error_msg}")
-        await state.clear()
-        return
-    except Exception:
-        logger.exception("Ошибка при отклонении")
-        await message.answer(messages.error_generic())
-        await state.clear()
-        return
 
-    task = result.get("data", {})
-    task_id = task.get("id", "?")
-    text = messages.review_rejected_msg(task_id, reason)
+    if mode == "all":
+        task_id = data["task_id"]
+        try:
+            await api.reject_all_responses(task_id, reason)
+        except httpx.HTTPStatusError as e:
+            error_msg = "Ошибка"
+            try:
+                error_msg = e.response.json().get("message", error_msg)
+            except Exception:
+                pass
+            await message.answer(f"⚠️ {error_msg}")
+            await state.clear()
+            return
+        except Exception:
+            logger.exception("Ошибка при массовом отклонении")
+            await message.answer(messages.error_generic())
+            await state.clear()
+            return
+
+        text = messages.review_rejected_msg(task_id, reason, count=0)
+    else:
+        response_id = data["response_id"]
+        try:
+            result = await api.reject_response(response_id, reason)
+        except httpx.HTTPStatusError as e:
+            error_msg = "Ошибка"
+            try:
+                error_msg = e.response.json().get("message", error_msg)
+            except Exception:
+                pass
+            await message.answer(f"⚠️ {error_msg}")
+            await state.clear()
+            return
+        except Exception:
+            logger.exception("Ошибка при отклонении")
+            await message.answer(messages.error_generic())
+            await state.clear()
+            return
+
+        task = result.get("data", {})
+        task_id = task.get("id", "?")
+        text = messages.review_rejected_msg(task_id, reason)
 
     # Обновить исходное сообщение
     original_msg_id = data.get("original_message_id")
