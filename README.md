@@ -77,7 +77,7 @@ src/
 | Переменная | По умолчанию | Описание |
 |------------|-------------|----------|
 | `TELEGRAM_BOT_TOKEN` | — (обязательная) | Токен Telegram Bot API |
-| `TASKMATE_API_URL` | `http://backend_api:8000/api/v1` | URL бэкенд API |
+| `TASKMATE_API_URL` | `http://api:8000/api/v1` | URL бэкенд API |
 | `VALKEY_HOST` | `valkey` | Хост Valkey/Redis |
 | `VALKEY_PORT` | `6379` | Порт Valkey |
 | `VALKEY_DB` | `1` | Номер БД |
@@ -97,7 +97,7 @@ podman compose --profile bot up -d --build
 Логи:
 
 ```bash
-podman compose logs -f telegram_bot
+podman compose logs -f telegram-bot
 ```
 
 ### Локально (для разработки)

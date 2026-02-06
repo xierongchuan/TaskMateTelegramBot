@@ -54,7 +54,7 @@ src/
 podman compose --profile bot up -d --build
 
 # Логи
-podman compose logs -f telegram_bot
+podman compose logs -f telegram-bot
 
 # Локально (разработка)
 cd TaskMateTelegramBot && pip install -r requirements.txt && python -m src.main
@@ -65,6 +65,6 @@ cd TaskMateTelegramBot && pip install -r requirements.txt && python -m src.main
 | Переменная | Описание |
 |-----------|----------|
 | TELEGRAM_BOT_TOKEN | Токен бота |
-| TASKMATE_API_URL | URL API (http://backend_api:8000/api/v1) |
+| TASKMATE_API_URL | URL API (http://api:8000/api/v1) |
 | VALKEY_HOST/PORT/DB | Подключение к Valkey |
 | LOG_LEVEL | Уровень логирования |
