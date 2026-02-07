@@ -98,8 +98,8 @@ async def _handle_message(bot: Bot, body: bytes) -> None:
         try:
             kwargs: dict = {}
             if event == "task.assigned":
-                kwargs["reply_markup"] = keyboards.notification_task_actions(
-                    task_id, task.get("response_type", "")
+                kwargs["reply_markup"] = keyboards.task_actions(
+                    task_id, task.get("response_type", ""), "pending"
                 )
             elif event == "task.pending_review":
                 response_id = payload.get("response_id")

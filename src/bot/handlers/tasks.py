@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -19,6 +20,9 @@ from src.storage.sessions import UserSession
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+MAX_PROOF_FILES = 5
+MAX_PROOF_TOTAL_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 class ProofUpload(StatesGroup):
@@ -41,7 +45,16 @@ async def cmd_tasks(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     tasks = result.get("data", [])
-    await message.answer(messages.task_list(tasks), reply_markup=kb)
+    if not tasks:
+        await message.answer("📋 У вас нет активных задач.", reply_markup=kb)
+        return
+
+    await message.answer(f"📋 <b>Задачи на сегодня ({len(tasks)})</b>", reply_markup=kb)
+    for t in tasks:
+        text = messages.task_list_item_text(t)
+        item_kb = keyboards.task_list_item(t["id"])
+        await message.answer(text, reply_markup=item_kb)
+        await asyncio.sleep(0.05)
 
 
 @router.message(Command("task"))
@@ -72,7 +85,7 @@ async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
         await message.answer(messages.error_generic(), reply_markup=reply_kb)
         return
 
-    task = result.get("data", {})
+    task = result
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )
@@ -93,7 +106,7 @@ async def cb_task_detail(callback: CallbackQuery, session: UserSession) -> None:
         await callback.answer("Ошибка загрузки", show_alert=True)
         return
 
-    task = result.get("data", {})
+    task = result
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )
@@ -111,8 +124,27 @@ async def cb_acknowledge(callback: CallbackQuery, session: UserSession) -> None:
     except Exception:
         await callback.answer("Ошибка", show_alert=True)
         return
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await callback.message.answer(messages.status_updated(task_id, "acknowledged"))
     await callback.answer("✅")
+
+
+# --- Complete confirmation flow ---
+
+
+@router.callback_query(F.data.startswith("complete_confirm:"))
+async def cb_complete_confirm(callback: CallbackQuery, session: UserSession) -> None:
+    """Показать подтверждение выполнения."""
+    task_id = int(callback.data.split(":")[1])
+    kb = keyboards.complete_confirmation(task_id)
+    await callback.message.answer(
+        f"Подтвердите выполнение задачи #{task_id}:",
+        reply_markup=kb,
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("complete:"))
@@ -125,8 +157,22 @@ async def cb_complete(callback: CallbackQuery, session: UserSession) -> None:
     except Exception:
         await callback.answer("Ошибка", show_alert=True)
         return
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await callback.message.answer(messages.status_updated(task_id, "completed"))
     await callback.answer("✅")
+
+
+@router.callback_query(F.data.startswith("complete_cancel:"))
+async def cb_complete_cancel(callback: CallbackQuery) -> None:
+    """Отменить выполнение."""
+    try:
+        await callback.message.edit_text("Выполнение отменено.", reply_markup=None)
+    except Exception:
+        await callback.message.answer("Выполнение отменено.")
+    await callback.answer()
 
 
 # --- Proof upload FSM ---
@@ -139,7 +185,7 @@ async def cb_proof_start(
     """Начать загрузку доказательств."""
     task_id = int(callback.data.split(":")[1])
     await state.set_state(ProofUpload.collecting)
-    await state.update_data(task_id=task_id, files=[])
+    await state.update_data(task_id=task_id, files=[], total_bytes=0)
     kb = keyboards.proof_actions(task_id)
     await callback.message.answer(messages.proof_upload_prompt(), reply_markup=kb)
     await callback.answer()
@@ -150,17 +196,29 @@ async def on_proof_photo(message: Message, state: FSMContext) -> None:
     """Получить фото как доказательство."""
     data = await state.get_data()
     files: list[dict[str, Any]] = data.get("files", [])
+    total_bytes: int = data.get("total_bytes", 0)
+
+    if len(files) >= MAX_PROOF_FILES:
+        kb = keyboards.proof_actions(data["task_id"])
+        await message.answer(f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».", reply_markup=kb)
+        return
 
     photo = message.photo[-1]  # наибольший размер
     file = await message.bot.get_file(photo.file_id)
     file_bytes = await message.bot.download_file(file.file_path)
+    content = file_bytes.read()
+
+    if total_bytes + len(content) > MAX_PROOF_TOTAL_BYTES:
+        kb = keyboards.proof_actions(data["task_id"])
+        await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
+        return
 
     files.append({
         "name": f"photo_{len(files) + 1}.jpg",
-        "content": file_bytes.read(),
+        "content": content,
         "mime": "image/jpeg",
     })
-    await state.update_data(files=files)
+    await state.update_data(files=files, total_bytes=total_bytes + len(content))
 
     kb = keyboards.proof_actions(data["task_id"])
     await message.answer(messages.proof_received(len(files)), reply_markup=kb)
@@ -171,17 +229,29 @@ async def on_proof_document(message: Message, state: FSMContext) -> None:
     """Получить документ как доказательство."""
     data = await state.get_data()
     files: list[dict[str, Any]] = data.get("files", [])
+    total_bytes: int = data.get("total_bytes", 0)
+
+    if len(files) >= MAX_PROOF_FILES:
+        kb = keyboards.proof_actions(data["task_id"])
+        await message.answer(f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».", reply_markup=kb)
+        return
 
     doc = message.document
     file = await message.bot.get_file(doc.file_id)
     file_bytes = await message.bot.download_file(file.file_path)
+    content = file_bytes.read()
+
+    if total_bytes + len(content) > MAX_PROOF_TOTAL_BYTES:
+        kb = keyboards.proof_actions(data["task_id"])
+        await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
+        return
 
     files.append({
         "name": doc.file_name or f"file_{len(files) + 1}",
-        "content": file_bytes.read(),
+        "content": content,
         "mime": doc.mime_type or "application/octet-stream",
     })
-    await state.update_data(files=files)
+    await state.update_data(files=files, total_bytes=total_bytes + len(content))
 
     kb = keyboards.proof_actions(data["task_id"])
     await message.answer(messages.proof_received(len(files)), reply_markup=kb)
@@ -192,17 +262,29 @@ async def on_proof_video(message: Message, state: FSMContext) -> None:
     """Получить видео как доказательство."""
     data = await state.get_data()
     files: list[dict[str, Any]] = data.get("files", [])
+    total_bytes: int = data.get("total_bytes", 0)
+
+    if len(files) >= MAX_PROOF_FILES:
+        kb = keyboards.proof_actions(data["task_id"])
+        await message.answer(f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».", reply_markup=kb)
+        return
 
     video = message.video
     file = await message.bot.get_file(video.file_id)
     file_bytes = await message.bot.download_file(file.file_path)
+    content = file_bytes.read()
+
+    if total_bytes + len(content) > MAX_PROOF_TOTAL_BYTES:
+        kb = keyboards.proof_actions(data["task_id"])
+        await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
+        return
 
     files.append({
         "name": video.file_name or f"video_{len(files) + 1}.mp4",
-        "content": file_bytes.read(),
+        "content": content,
         "mime": video.mime_type or "video/mp4",
     })
-    await state.update_data(files=files)
+    await state.update_data(files=files, total_bytes=total_bytes + len(content))
 
     kb = keyboards.proof_actions(data["task_id"])
     await message.answer(messages.proof_received(len(files)), reply_markup=kb)
@@ -234,6 +316,10 @@ async def cb_proof_submit(
         return
 
     await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await callback.message.answer(messages.proof_submitted())
     await callback.answer("📤")
 
@@ -242,5 +328,23 @@ async def cb_proof_submit(
 async def cb_proof_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Отменить загрузку доказательств."""
     await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await callback.message.answer("Загрузка доказательств отменена.")
     await callback.answer()
+
+
+# --- FSM fallback: неожиданные сообщения ---
+
+
+@router.message(ProofUpload.collecting)
+async def on_proof_unexpected(message: Message, state: FSMContext) -> None:
+    """Обработать неожиданное сообщение во время загрузки доказательств."""
+    data = await state.get_data()
+    kb = keyboards.proof_actions(data["task_id"])
+    await message.answer(
+        "Отправьте фото, видео или документ. Текстовые сообщения не принимаются.",
+        reply_markup=kb,
+    )

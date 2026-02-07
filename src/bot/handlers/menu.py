@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import F, Router
@@ -38,7 +39,16 @@ async def btn_tasks(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     tasks = result.get("data", [])
-    await message.answer(messages.task_list(tasks), reply_markup=kb)
+    if not tasks:
+        await message.answer("📋 У вас нет активных задач.", reply_markup=kb)
+        return
+
+    await message.answer(f"📋 <b>Задачи на сегодня ({len(tasks)})</b>", reply_markup=kb)
+    for t in tasks:
+        text = messages.task_list_item_text(t)
+        item_kb = keyboards.task_list_item(t["id"])
+        await message.answer(text, reply_markup=item_kb)
+        await asyncio.sleep(0.05)
 
 
 @router.message(F.text == keyboards.BTN_MY_SHIFT)
@@ -102,7 +112,7 @@ async def btn_dashboard(message: Message, session: UserSession, **kwargs) -> Non
         return
 
     data = result.get("data", result)
-    await message.answer(messages.dashboard_summary(data), reply_markup=kb)
+    await message.answer(messages.dashboard_summary(data, role=session.role), reply_markup=kb)
 
 
 @router.message(F.text == keyboards.BTN_PENDING_REVIEW)

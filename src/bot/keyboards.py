@@ -67,7 +67,7 @@ def task_actions(task_id: int, response_type: str, status: str) -> InlineKeyboar
         buttons.append([
             InlineKeyboardButton(
                 text="✅ Выполнено",
-                callback_data=f"complete:{task_id}",
+                callback_data=f"complete_confirm:{task_id}",
             ),
         ])
 
@@ -83,6 +83,24 @@ def task_actions(task_id: int, response_type: str, status: str) -> InlineKeyboar
     if not buttons:
         return None
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def complete_confirmation(task_id: int) -> InlineKeyboardMarkup:
+    """Кнопки подтверждения выполнения задачи."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Да, выполнено",
+                    callback_data=f"complete:{task_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data=f"complete_cancel:{task_id}",
+                ),
+            ]
+        ]
+    )
 
 
 def proof_actions(task_id: int) -> InlineKeyboardMarkup:
@@ -161,6 +179,15 @@ def review_group_actions(task_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def notification_task_actions(task_id: int, response_type: str) -> InlineKeyboardMarkup | None:
-    """Кнопки для уведомления о новой задаче."""
-    return task_actions(task_id, response_type, "pending")
+def reject_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка отмены при вводе причины отклонения."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="reject_cancel",
+                ),
+            ]
+        ]
+    )

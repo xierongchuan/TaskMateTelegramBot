@@ -77,7 +77,7 @@ async def cmd_login(message: Message) -> None:
         tasks_result = await authed_api.get_tasks({"per_page": 100})
         task_ids = [t["id"] for t in tasks_result.get("data", [])]
         if task_ids:
-            for category in ("tasks", "deadlines", "overdue"):
+            for category in ("tasks", "deadlines", "overdue", "reviews"):
                 await bulk_add_notified(message.chat.id, category, task_ids)
     except Exception:
         logger.debug("Не удалось затушить уведомления при логине для %s", message.chat.id)

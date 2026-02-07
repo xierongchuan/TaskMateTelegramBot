@@ -5,7 +5,7 @@ from __future__ import annotations
 from src.storage.sessions import get_redis
 
 KEY_PREFIX = "tmbot:notified:"
-CATEGORIES = ("tasks", "deadlines", "overdue")
+CATEGORIES = ("tasks", "deadlines", "overdue", "reviews")
 
 
 async def is_notified(chat_id: int, category: str, task_id: int) -> bool:

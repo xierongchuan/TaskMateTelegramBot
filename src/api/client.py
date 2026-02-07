@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 from typing import Any
 
@@ -13,6 +12,25 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 30.0
+
+# Shared httpx client для переиспользования соединений
+_shared_client: httpx.AsyncClient | None = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """Получить shared httpx client с пулом соединений."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+    return _shared_client
+
+
+async def close_http_client() -> None:
+    """Закрыть shared httpx client."""
+    global _shared_client
+    if _shared_client is not None:
+        await _shared_client.aclose()
+        _shared_client = None
 
 
 class TaskMateAPI:
@@ -37,18 +55,21 @@ class TaskMateAPI:
         params: dict[str, Any] | None = None,
         files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
         data: dict[str, Any] | None = None,
+        raise_for_status: bool = True,
     ) -> httpx.Response:
         url = f"{self._base_url}{path}"
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            resp = await client.request(
-                method,
-                url,
-                headers=self._headers(),
-                json=json,
-                params=params,
-                files=files,
-                data=data,
-            )
+        client = await get_http_client()
+        resp = await client.request(
+            method,
+            url,
+            headers=self._headers(),
+            json=json,
+            params=params,
+            files=files,
+            data=data,
+        )
+        if raise_for_status:
+            resp.raise_for_status()
         return resp
 
     # --- Аутентификация ---
@@ -58,18 +79,15 @@ class TaskMateAPI:
         resp = await self._request(
             "POST", "/session", json={"login": login, "password": password}
         )
-        resp.raise_for_status()
         return resp.json()
 
     async def logout(self) -> None:
         """DELETE /session — выход."""
-        resp = await self._request("DELETE", "/session")
-        resp.raise_for_status()
+        await self._request("DELETE", "/session")
 
     async def current_user(self) -> dict[str, Any]:
         """GET /session/current — текущий пользователь."""
         resp = await self._request("GET", "/session/current")
-        resp.raise_for_status()
         return resp.json()
 
     # --- Задачи ---
@@ -79,13 +97,11 @@ class TaskMateAPI:
     ) -> dict[str, Any]:
         """GET /tasks — список задач."""
         resp = await self._request("GET", "/tasks", params=params)
-        resp.raise_for_status()
         return resp.json()
 
     async def get_task(self, task_id: int) -> dict[str, Any]:
         """GET /tasks/{id} — детали задачи."""
         resp = await self._request("GET", f"/tasks/{task_id}")
-        resp.raise_for_status()
         return resp.json()
 
     async def get_my_history(
@@ -93,7 +109,6 @@ class TaskMateAPI:
     ) -> dict[str, Any]:
         """GET /tasks/my-history — история моих задач."""
         resp = await self._request("GET", "/tasks/my-history", params=params)
-        resp.raise_for_status()
         return resp.json()
 
     async def update_task_status(
@@ -123,7 +138,6 @@ class TaskMateAPI:
             resp = await self._request(
                 "PATCH", f"/tasks/{task_id}/status", json=body
             )
-        resp.raise_for_status()
         return resp.json()
 
     # --- Смены ---
@@ -131,7 +145,6 @@ class TaskMateAPI:
     async def get_my_current_shift(self) -> dict[str, Any]:
         """GET /shifts/my/current — моя текущая смена."""
         resp = await self._request("GET", "/shifts/my/current")
-        resp.raise_for_status()
         return resp.json()
 
     async def get_my_shifts(
@@ -139,7 +152,6 @@ class TaskMateAPI:
     ) -> dict[str, Any]:
         """GET /shifts/my — мои смены."""
         resp = await self._request("GET", "/shifts/my", params=params)
-        resp.raise_for_status()
         return resp.json()
 
     # --- Верификация задач (manager/owner) ---
@@ -147,7 +159,6 @@ class TaskMateAPI:
     async def approve_response(self, response_id: int) -> dict[str, Any]:
         """POST /task-responses/{id}/approve — одобрить ответ."""
         resp = await self._request("POST", f"/task-responses/{response_id}/approve")
-        resp.raise_for_status()
         return resp.json()
 
     async def reject_response(
@@ -159,7 +170,6 @@ class TaskMateAPI:
             f"/task-responses/{response_id}/reject",
             json={"reason": reason},
         )
-        resp.raise_for_status()
         return resp.json()
 
     async def reject_all_responses(
@@ -171,7 +181,6 @@ class TaskMateAPI:
             f"/tasks/{task_id}/reject-all-responses",
             json={"reason": reason},
         )
-        resp.raise_for_status()
         return resp.json()
 
     # --- Смены (все) ---
@@ -181,13 +190,11 @@ class TaskMateAPI:
     ) -> dict[str, Any]:
         """GET /shifts — список всех смен."""
         resp = await self._request("GET", "/shifts", params=params)
-        resp.raise_for_status()
         return resp.json()
 
     async def get_shift(self, shift_id: int) -> dict[str, Any]:
         """GET /shifts/{id} — детали смены."""
         resp = await self._request("GET", f"/shifts/{shift_id}")
-        resp.raise_for_status()
         return resp.json()
 
     async def download_shift_photo(
@@ -196,7 +203,8 @@ class TaskMateAPI:
         """GET /shift-photos/{id}/{type} — скачать фото смены."""
         try:
             resp = await self._request(
-                "GET", f"/shift-photos/{shift_id}/{photo_type}"
+                "GET", f"/shift-photos/{shift_id}/{photo_type}",
+                raise_for_status=False,
             )
             if resp.status_code == 200:
                 return resp.content
@@ -207,11 +215,11 @@ class TaskMateAPI:
     async def download_proof_by_url(self, url: str) -> bytes | None:
         """Скачать файл по signed URL (proof или shared proof)."""
         try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                resp = await client.get(url, headers=self._headers())
-                if resp.status_code == 200:
-                    return resp.content
-                logger.debug("Proof download failed: %s -> %s", url, resp.status_code)
+            client = await get_http_client()
+            resp = await client.get(url, headers=self._headers())
+            if resp.status_code == 200:
+                return resp.content
+            logger.debug("Proof download failed: %s -> %s", url, resp.status_code)
         except Exception:
             logger.debug("Proof download error: %s", url)
         return None
@@ -223,5 +231,4 @@ class TaskMateAPI:
     ) -> dict[str, Any]:
         """GET /dashboard — данные дашборда."""
         resp = await self._request("GET", "/dashboard", params=params)
-        resp.raise_for_status()
         return resp.json()

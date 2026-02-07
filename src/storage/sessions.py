@@ -53,7 +53,7 @@ async def save_session(chat_id: int, session: UserSession) -> None:
             "login": session.login,
         }
     )
-    await r.set(f"{KEY_PREFIX}{chat_id}", data)
+    await r.set(f"{KEY_PREFIX}{chat_id}", data, ex=settings.session_ttl_seconds)
 
 
 async def get_session(chat_id: int) -> UserSession | None:
@@ -64,6 +64,12 @@ async def get_session(chat_id: int) -> UserSession | None:
         return None
     parsed = json.loads(data)
     return UserSession(**parsed)
+
+
+async def refresh_session_ttl(chat_id: int) -> None:
+    """Продлить TTL сессии при активности пользователя."""
+    r = await get_redis()
+    await r.expire(f"{KEY_PREFIX}{chat_id}", settings.session_ttl_seconds)
 
 
 async def delete_session(chat_id: int) -> None:

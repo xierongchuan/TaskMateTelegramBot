@@ -67,11 +67,12 @@ async def send_manager_shifts(
     """Показать открытые смены сегодня — каждая отдельным сообщением с фото."""
     api = TaskMateAPI(token=session.token)
     try:
-        from datetime import date
+        from datetime import datetime, timezone
 
+        today_utc = datetime.now(timezone.utc).date().isoformat()
         result = await api.get_shifts({
             "status": "open",
-            "date": date.today().isoformat(),
+            "date": today_utc,
             "per_page": 20,
         })
     except httpx.HTTPStatusError:

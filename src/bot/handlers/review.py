@@ -121,7 +121,7 @@ async def send_review_list(
         await _send_task_card(message, api, task, pending, kb)
 
 
-# --- Single response callbacks (unchanged) ---
+# --- Single response callbacks ---
 
 
 @router.callback_query(F.data.startswith("review_approve:"))
@@ -162,7 +162,10 @@ async def cb_review_reject(
         original_message_id=callback.message.message_id,
         has_photo=bool(callback.message.photo),
     )
-    await callback.message.answer(messages.rejection_reason_prompt())
+    await callback.message.answer(
+        messages.rejection_reason_prompt(),
+        reply_markup=keyboards.reject_cancel_keyboard(),
+    )
     await callback.answer()
 
 
@@ -175,19 +178,18 @@ async def cb_review_approve_all(callback: CallbackQuery, session: UserSession) -
     task_id = int(callback.data.split(":")[1])
     api = TaskMateAPI(token=session.token)
 
-    # Получить задачу чтобы найти все pending responses
     try:
-        result = await api.get_tasks({"status": "pending_review", "per_page": 50})
+        result = await api.get_task(task_id)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            await callback.answer("Задача не найдена", show_alert=True)
+            return
+        raise
     except Exception:
         await callback.answer("Ошибка при загрузке", show_alert=True)
         return
 
-    task = None
-    for t in result.get("data", []):
-        if t["id"] == task_id:
-            task = t
-            break
-
+    task = result
     if not task:
         await callback.answer("Задача не найдена", show_alert=True)
         return
@@ -224,7 +226,10 @@ async def cb_review_reject_all(
         original_message_id=callback.message.message_id,
         has_photo=bool(callback.message.photo),
     )
-    await callback.message.answer(messages.rejection_reason_prompt())
+    await callback.message.answer(
+        messages.rejection_reason_prompt(),
+        reply_markup=keyboards.reject_cancel_keyboard(),
+    )
     await callback.answer()
 
 
@@ -235,17 +240,17 @@ async def cb_review_individual(callback: CallbackQuery, session: UserSession) ->
     api = TaskMateAPI(token=session.token)
 
     try:
-        result = await api.get_tasks({"status": "pending_review", "per_page": 50})
+        result = await api.get_task(task_id)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            await callback.answer("Задача не найдена", show_alert=True)
+            return
+        raise
     except Exception:
         await callback.answer("Ошибка при загрузке", show_alert=True)
         return
 
-    task = None
-    for t in result.get("data", []):
-        if t["id"] == task_id:
-            task = t
-            break
-
+    task = result
     if not task:
         await callback.answer("Задача не найдена", show_alert=True)
         return
@@ -278,6 +283,22 @@ async def cb_review_individual(callback: CallbackQuery, session: UserSession) ->
     await callback.answer()
 
 
+# --- Reject cancel callback ---
+
+
+@router.callback_query(F.data == "reject_cancel")
+async def cb_reject_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отменить отклонение."""
+    current_state = await state.get_state()
+    if current_state == RejectReason.waiting:
+        await state.clear()
+    try:
+        await callback.message.edit_text("Отклонение отменено.", reply_markup=None)
+    except Exception:
+        await callback.message.answer("Отклонение отменено.")
+    await callback.answer()
+
+
 # --- FSM: получение причины отклонения ---
 
 
@@ -299,7 +320,7 @@ async def on_reject_reason(
     if mode == "all":
         task_id = data["task_id"]
         try:
-            await api.reject_all_responses(task_id, reason)
+            result = await api.reject_all_responses(task_id, reason)
         except httpx.HTTPStatusError as e:
             error_msg = "Ошибка"
             try:
@@ -315,7 +336,9 @@ async def on_reject_reason(
             await state.clear()
             return
 
-        text = messages.review_rejected_msg(task_id, reason, count=0)
+        task_data = result.get("data", {})
+        rejected_count = len([r for r in task_data.get("responses", []) if r.get("status") == "rejected"])
+        text = messages.review_rejected_msg(task_id, reason, count=rejected_count)
     else:
         response_id = data["response_id"]
         try:
@@ -363,3 +386,15 @@ async def on_reject_reason(
 
     await message.answer(text)
     await state.clear()
+
+
+# --- FSM fallback: неожиданные сообщения ---
+
+
+@router.message(RejectReason.waiting)
+async def on_reject_unexpected(message: Message, state: FSMContext) -> None:
+    """Обработать неожиданное сообщение во время ожидания причины отклонения."""
+    await message.answer(
+        "Пожалуйста, отправьте текстовое сообщение с причиной отклонения.",
+        reply_markup=keyboards.reject_cancel_keyboard(),
+    )

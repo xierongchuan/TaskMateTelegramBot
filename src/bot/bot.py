@@ -15,7 +15,7 @@ import httpx
 from src.bot import keyboards
 from src.config import settings
 from src.storage.notifications import clear_notified
-from src.storage.sessions import delete_session, get_session
+from src.storage.sessions import delete_session, get_session, refresh_session_ttl
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ class AuthMiddleware(BaseMiddleware):
                     await event.answer("Вы не авторизованы", show_alert=True)
                 return
             data["session"] = session
+            await refresh_session_ttl(chat_id)
 
         try:
             return await handler(event, data)

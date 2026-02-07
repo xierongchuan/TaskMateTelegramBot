@@ -51,6 +51,13 @@ async def check_deadlines(bot: Bot) -> None:
                         chat_id,
                         messages.notification_deadline_soon(task, minutes),
                     )
+                elif diff <= 0 and status in ("pending", "acknowledged"):
+                    if not await is_notified(chat_id, "overdue", task_id):
+                        await add_notified(chat_id, "overdue", task_id)
+                        await bot.send_message(
+                            chat_id,
+                            messages.notification_overdue(task),
+                        )
         except httpx.HTTPStatusError:
             pass
         except Exception:

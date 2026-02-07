@@ -8,6 +8,7 @@ import logging
 from apscheduler import AsyncScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from src.api.client import close_http_client
 from src.bot.bot import AuthMiddleware, ReplyKeyboardMiddleware, bot, dp
 from src.bot.handlers import auth, common, menu, review, shifts, tasks
 from src.config import settings
@@ -32,6 +33,7 @@ async def main() -> None:
         r.message.middleware(AuthMiddleware())
         r.message.middleware(ReplyKeyboardMiddleware())
         r.callback_query.middleware(AuthMiddleware())
+        r.callback_query.middleware(ReplyKeyboardMiddleware())
         dp.include_router(r)
 
     # Запуск scheduler для polling дедлайнов
@@ -50,6 +52,7 @@ async def main() -> None:
             await dp.start_polling(bot)
         finally:
             logger.info("Остановка TaskMateBot...")
+            await close_http_client()
             await sessions.close()
             await bot.session.close()
 

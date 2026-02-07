@@ -25,7 +25,14 @@ def help_text() -> str:
         "/task <i>ID</i> — детали задачи\n"
         "/shift — текущая смена\n"
         "/shifts — мои смены\n"
-        "/help — справка"
+        "/help — справка\n\n"
+        "<b>Кнопки меню</b>\n\n"
+        "📋 <b>Мои задачи / Задачи</b> — список задач на сегодня\n"
+        "🕐 <b>Моя смена / Смены</b> — текущая смена или список смен\n"
+        "✅ <b>На проверку</b> — задачи, ожидающие проверки (менеджер)\n"
+        "🔴 <b>Просрочены</b> — просроченные задачи (менеджер)\n"
+        "📊 <b>Дашборд</b> — сводка по задачам и сменам\n"
+        "🚪 <b>Выход</b> — выход из системы"
     )
 
 
@@ -112,6 +119,13 @@ def task_detail(t: dict[str, Any]) -> str:
     if t.get("creator"):
         creator = t["creator"]
         lines.append(f"Автор: {creator.get('full_name', '—')}")
+
+    # Показать причину отклонения для rejected задач
+    if t.get("status") == "rejected":
+        reason = _extract_reject_reason(t)
+        if reason:
+            lines.append(f"\n❌ <b>Причина отклонения:</b> {reason}")
+
     return "\n".join(lines)
 
 
@@ -202,7 +216,7 @@ def notification_rejected(t: dict[str, Any], reason: str = "") -> str:
     return msg
 
 
-def dashboard_summary(d: dict[str, Any]) -> str:
+def dashboard_summary(d: dict[str, Any], role: str = "") -> str:
     lines = [
         "📊 <b>Дашборд</b>\n",
         "━━━━━━━━━━━━━━━━━━",
@@ -210,12 +224,22 @@ def dashboard_summary(d: dict[str, Any]) -> str:
         f"  Активных: {d.get('active_tasks', 0)}",
         f"  Выполнено: {d.get('completed_tasks', 0)}",
         f"  Просрочено: {d.get('overdue_tasks', 0)}",
-        f"  На проверке: {d.get('pending_review_count', 0)}",
+    ]
+
+    # На проверке — только для менеджеров и выше
+    if role not in ("employee", "observer"):
+        lines.append(f"  На проверке: {d.get('pending_review_count', 0)}")
+
+    lines.extend([
         "",
         "<b>🕐 Смены</b>",
         f"  Открытых: {d.get('open_shifts', 0)}",
         f"  Опоздания сегодня: {d.get('late_shifts_today', 0)}",
-    ]
+    ])
+
+    # Остальные секции — только для менеджеров и выше
+    if role in ("employee", "observer"):
+        return "\n".join(lines)
 
     # Генераторы
     if d.get("total_generators") or d.get("tasks_generated_today"):
@@ -279,18 +303,15 @@ def dashboard_summary(d: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def pending_review_list(tasks: list[dict[str, Any]]) -> str:
-    if not tasks:
-        return "✅ Нет задач на проверку."
-    lines = ["✅ <b>Задачи на проверку</b>\n"]
-    for t in tasks:
-        priority_icon = _priority_icon(t.get("priority", "medium"))
-        deadline = _format_deadline(t.get("deadline"))
-        lines.append(
-            f"{priority_icon} <b>#{t['id']}</b> {t['title']}"
-            f"\n   Дедлайн: {deadline}"
-        )
-    return "\n".join(lines)
+def task_list_item_text(t: dict[str, Any]) -> str:
+    """Краткий текст задачи для списка (одно сообщение на задачу)."""
+    status_icon = _status_icon(t.get("status", ""))
+    priority_icon = _priority_icon(t.get("priority", "medium"))
+    deadline = _format_deadline(t.get("deadline"))
+    return (
+        f"{status_icon} {priority_icon} <b>#{t['id']}</b> {t['title']}\n"
+        f"Дедлайн: {deadline}"
+    )
 
 
 def overdue_task_list(tasks: list[dict[str, Any]]) -> str:
@@ -454,6 +475,19 @@ def error_generic() -> str:
 # --- Вспомогательные ---
 
 
+def _extract_reject_reason(t: dict[str, Any]) -> str:
+    """Извлечь последнюю причину отклонения из responses → verification_history."""
+    for resp in t.get("responses", []):
+        if resp.get("status") != "rejected":
+            continue
+        for entry in reversed(resp.get("verification_history", [])):
+            if entry.get("action") == "rejected" and entry.get("reason"):
+                return entry["reason"]
+        if resp.get("rejection_reason"):
+            return resp["rejection_reason"]
+    return ""
+
+
 def _status_icon(status: str) -> str:
     return {
         "pending": "🔵",
@@ -487,7 +521,7 @@ def _format_deadline(deadline: str | None) -> str:
         return "—"
     try:
         dt = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m.%Y %H:%M")
+        return dt.strftime("%d.%m.%Y %H:%M") + " (UTC)"
     except (ValueError, AttributeError):
         return deadline
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from src.api.client import close_http_client
 from src.bot.bot import bot
 from src.config import settings
 from src.rabbitmq.consumer import start_consumer
@@ -31,6 +32,7 @@ async def main() -> None:
                 await asyncio.sleep(5)
     finally:
         logger.info("Остановка Notification Worker...")
+        await close_http_client()
         await sessions.close()
         await bot.session.close()
 
