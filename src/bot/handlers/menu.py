@@ -53,14 +53,21 @@ async def btn_tasks(message: Message, session: UserSession, **kwargs) -> None:
 
 @router.message(F.text == keyboards.BTN_MY_SHIFT)
 async def btn_my_shift(message: Message, session: UserSession, **kwargs) -> None:
-    """Текущая смена."""
+    """Текущая смена. Для employee — с кнопками открытия/закрытия."""
     kb = _kb(kwargs)
+    is_employee = session.role == "employee"
     api = TaskMateAPI(token=session.token)
     try:
         result = await api.get_my_current_shift()
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
-            await message.answer(messages.no_current_shift(), reply_markup=kb)
+            if is_employee:
+                await message.answer(
+                    messages.no_current_shift_with_action(),
+                    reply_markup=keyboards.shift_actions_no_shift(),
+                )
+            else:
+                await message.answer(messages.no_current_shift(), reply_markup=kb)
             return
         raise
     except Exception:
@@ -70,9 +77,22 @@ async def btn_my_shift(message: Message, session: UserSession, **kwargs) -> None
 
     shift = result.get("data")
     if not shift:
-        await message.answer(messages.no_current_shift(), reply_markup=kb)
+        if is_employee:
+            await message.answer(
+                messages.no_current_shift_with_action(),
+                reply_markup=keyboards.shift_actions_no_shift(),
+            )
+        else:
+            await message.answer(messages.no_current_shift(), reply_markup=kb)
         return
-    await message.answer(messages.shift_info(shift), reply_markup=kb)
+
+    if is_employee and shift.get("status") in ("open", "late"):
+        await message.answer(
+            messages.shift_info_with_action(shift),
+            reply_markup=keyboards.shift_actions_open(shift["id"]),
+        )
+    else:
+        await message.answer(messages.shift_info(shift), reply_markup=kb)
 
 
 @router.message(F.text == keyboards.BTN_SHIFTS)

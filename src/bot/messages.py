@@ -472,6 +472,79 @@ def error_generic() -> str:
     return "⚠️ Произошла ошибка. Попробуйте позже."
 
 
+# --- Смены: открытие/закрытие ---
+
+
+def no_current_shift_with_action() -> str:
+    return "ℹ️ У вас нет открытой смены.\nНажмите кнопку ниже, чтобы открыть смену."
+
+
+def shift_info_with_action(s: dict[str, Any]) -> str:
+    start = _format_datetime(s.get("shift_start"))
+    status_labels = {
+        "open": "🟢 Открыта",
+        "late": "🟡 Опоздание",
+        "closed": "⚪ Закрыта",
+        "replaced": "🔄 Замена",
+    }
+    status = status_labels.get(s.get("status", ""), s.get("status", ""))
+    dealership = s.get("dealership", {}).get("name", "—")
+    late_min = s.get("late_minutes", 0)
+    lines = [
+        "🏢 <b>Смена</b>\n",
+        f"Статус: {status}",
+        f"Начало: {start}",
+        f"Автосалон: {dealership}",
+    ]
+    if late_min:
+        lines.append(f"Опоздание: {late_min} мин")
+    return "\n".join(lines)
+
+
+def shift_select_dealership() -> str:
+    return "🏢 Выберите автосалон для открытия смены:"
+
+
+def shift_open_photo_prompt() -> str:
+    return "📸 Отправьте фото для открытия смены."
+
+
+def shift_close_photo_prompt() -> str:
+    return "📸 Отправьте фото закрытия смены или нажмите «Без фото»."
+
+
+def shift_opened_success(s: dict[str, Any]) -> str:
+    start = _format_datetime(s.get("shift_start"))
+    status_labels = {
+        "open": "🟢 Вовремя",
+        "late": "🟡 Опоздание",
+    }
+    status = status_labels.get(s.get("status", ""), s.get("status", ""))
+    dealership = s.get("dealership", {}).get("name", "—")
+    late_min = s.get("late_minutes", 0)
+    lines = [
+        "✅ <b>Смена открыта!</b>\n",
+        f"Статус: {status}",
+        f"Начало: {start}",
+        f"Автосалон: {dealership}",
+    ]
+    if late_min:
+        lines.append(f"Опоздание: {late_min} мин")
+    return "\n".join(lines)
+
+
+def shift_closed_success(s: dict[str, Any]) -> str:
+    start = _format_datetime(s.get("shift_start"))
+    end = _format_datetime(s.get("shift_end"))
+    dealership = s.get("dealership", {}).get("name", "—")
+    return (
+        "🔒 <b>Смена закрыта</b>\n\n"
+        f"Начало: {start}\n"
+        f"Конец: {end}\n"
+        f"Автосалон: {dealership}"
+    )
+
+
 # --- Вспомогательные ---
 
 

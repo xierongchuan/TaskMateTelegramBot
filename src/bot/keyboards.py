@@ -179,6 +179,65 @@ def review_group_actions(task_id: int) -> InlineKeyboardMarkup:
     )
 
 
+# --- Смены: открытие/закрытие ---
+
+
+def shift_actions_no_shift() -> InlineKeyboardMarkup:
+    """Кнопка открытия смены (нет открытой смены)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📸 Открыть смену", callback_data="shift_open")]
+        ]
+    )
+
+
+def shift_actions_open(shift_id: int) -> InlineKeyboardMarkup:
+    """Кнопка закрытия смены (есть открытая смена)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="🔒 Закрыть смену",
+                callback_data=f"shift_close:{shift_id}",
+            )]
+        ]
+    )
+
+
+def dealership_selector(dealerships: list[dict]) -> InlineKeyboardMarkup:
+    """Выбор автосалона при открытии смены."""
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"🏢 {d['name']}",
+            callback_data=f"shift_dealer:{d['id']}",
+        )]
+        for d in dealerships
+    ]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="shift_open_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def shift_open_cancel() -> InlineKeyboardMarkup:
+    """Кнопка отмены при ожидании фото открытия."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="shift_open_cancel")]
+        ]
+    )
+
+
+def shift_close_options(shift_id: int) -> InlineKeyboardMarkup:
+    """Кнопки при закрытии смены: без фото / отмена."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="📷 Без фото",
+                callback_data=f"shift_close_nophoto:{shift_id}",
+            )],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="shift_close_cancel")],
+        ]
+    )
+
+
 def reject_cancel_keyboard() -> InlineKeyboardMarkup:
     """Кнопка отмены при вводе причины отклонения."""
     return InlineKeyboardMarkup(

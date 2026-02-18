@@ -154,6 +154,62 @@ class TaskMateAPI:
         resp = await self._request("GET", "/shifts/my", params=params)
         return resp.json()
 
+    async def open_shift(
+        self,
+        user_id: int,
+        dealership_id: int,
+        photo: tuple[str, bytes, str],
+    ) -> dict[str, Any]:
+        """POST /shifts — открыть смену с фото."""
+        filename, content, mime = photo
+        resp = await self._request(
+            "POST",
+            "/shifts",
+            files=[("opening_photo", (filename, content, mime))],
+            data={
+                "user_id": str(user_id),
+                "dealership_id": str(dealership_id),
+            },
+        )
+        return resp.json()
+
+    async def close_shift(
+        self,
+        shift_id: int,
+        photo: tuple[str, bytes, str] | None = None,
+    ) -> dict[str, Any]:
+        """PUT /shifts/{id} — закрыть смену (с фото или без)."""
+        if photo:
+            filename, content, mime = photo
+            resp = await self._request(
+                "PUT",
+                f"/shifts/{shift_id}",
+                files=[("closing_photo", (filename, content, mime))],
+                data={"status": "closed"},
+            )
+        else:
+            resp = await self._request(
+                "PUT",
+                f"/shifts/{shift_id}",
+                json={"status": "closed"},
+            )
+        return resp.json()
+
+    async def get_user_dealerships(self) -> list[dict[str, Any]]:
+        """Получить список автосалонов текущего пользователя."""
+        result = await self.current_user()
+        user = result.get("data", result)
+        dealerships: list[dict[str, Any]] = []
+        # Основной автосалон
+        if user.get("dealership"):
+            d = user["dealership"]
+            dealerships.append({"id": d["id"], "name": d["name"]})
+        # Дополнительные автосалоны
+        for d in user.get("dealerships", []):
+            if not any(existing["id"] == d["id"] for existing in dealerships):
+                dealerships.append({"id": d["id"], "name": d["name"]})
+        return dealerships
+
     # --- Верификация задач (manager/owner) ---
 
     async def approve_response(self, response_id: int) -> dict[str, Any]:
