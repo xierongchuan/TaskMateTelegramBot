@@ -26,8 +26,10 @@ src/
 │   ├── messages.py      # Шаблоны сообщений (русский)
 │   ├── keyboards.py     # Inline-клавиатуры
 │   └── handlers/        # common, auth, tasks, shifts
+├── rabbitmq/            # consumer.py (RabbitMQ listener для уведомлений)
 ├── scheduler/polling.py # Периодический опрос API для уведомлений
-└── storage/sessions.py  # Сессии chat_id ↔ token в Valkey
+├── storage/             # Сессии (sessions) и уведомления (notifications) в Valkey
+└── worker.py            # Точка входа RabbitMQ worker (потребляет task_events)
 ```
 
 ## Conventions
@@ -36,6 +38,7 @@ src/
 - **Данные только через API** — никакого прямого доступа к БД или файловой системе сервера.
 - **FSM** — для многошаговых операций (загрузка proof файлов).
 - **Авторизация** — AuthMiddleware проверяет сессию в Valkey перед каждым handler.
+- **RabbitMQ** — для мгновенных уведомлений используется worker (aio-pika), слушающий очередь `telegram_notifications`.
 - **Язык UI** — русский.
 
 ## Команды бота
@@ -67,4 +70,6 @@ cd TaskMateTelegramBot && pip install -r requirements.txt && python -m src.main
 | TELEGRAM_BOT_TOKEN | Токен бота |
 | TASKMATE_API_URL | URL API (http://api:8000/api/v1) |
 | VALKEY_HOST/PORT/DB | Подключение к Valkey |
+| RABBITMQ_HOST/PORT | Подключение к RabbitMQ |
+| RABBITMQ_USER/PASSWORD/VHOST | Авторизация в RabbitMQ |
 | LOG_LEVEL | Уровень логирования |
