@@ -1,58 +1,49 @@
-# AGENTS.md
+# AGENTS.md — TaskMateTelegramBot
 
-This file provides guidance to agents when working with TaskMateTelegramBot.
+Telegram bot client for TaskMate. General rules in [../AGENTS.md](../AGENTS.md).
 
 ## Stack
 
-Python 3.12 + aiogram 3 + RabbitMQ consumer.
+Python 3.12 · aiogram 3 · httpx · APScheduler 4 · Valkey (redis.asyncio) · RabbitMQ consumer.
 
 ## Commands
 
 ```bash
 # Run bot
-podman compose exec telegram-bot python -m src.main
+podman compose --profile bot up -d --build
 
-# Run worker
-podman compose exec telegram-bot-worker python -m src.worker
+# Logs
+podman compose logs -f telegram-bot
 
-# Linting
-podman compose exec telegram-bot pip install ruff && ruff check src/
+# Local dev
+cd TaskMateTelegramBot && pip install -r requirements.txt && python -m src.main
 ```
+
+## Key Conventions
+
+- **Async everywhere** — aiogram, httpx, redis.asyncio. Synchronous code is forbidden
+- **Data only via API** — No direct DB access. All data through REST API `/api/v1/*`
+- **FSM** — For multi-step operations (proof uploads, auth)
+- **AuthMiddleware** — Checks Valkey session before every handler
+- **Language** — Russian for UI messages
 
 ## Structure
 
 ```
 src/
-├── main.py       # Bot entry point
-├── worker.py     # RabbitMQ consumer
-├── config.py     # Configuration
-├── api/          # API client
-├── bot/          # Bot handlers
-├── rabbitmq/     # RabbitMQ utilities
-├── scheduler/    # Scheduled tasks
-└── storage/      # File storage
+├── main.py           # Entry point: bot + scheduler + RabbitMQ
+├── config.py         # pydantic-settings
+├── api/client.py     # httpx client to TaskMateServer
+├── bot/              # handlers, keyboards, messages
+├── scheduler/        # Periodic API polling
+├── storage/          # Valkey sessions
+└── consumers/        # RabbitMQ consumers
 ```
 
-## Non-Obvious Rules
+## Forbidden
 
-### API Communication
-- Bot communicates with backend API at http://localhost:8007
-- All dates in UTC (ISO 8601 with Z suffix)
-- Use API client from `src/api/`
-
-### RabbitMQ
-- Worker consumes from queues defined in config
-- Handles task notifications, proof uploads
-- Error handling with retry logic
-
-### File Storage
-- Proof files stored via backend API
-- Use signed URLs for file access
-
-### Security
-
-- **Input Validation**: Validate all user input from Telegram
-- **Command Injection**: Never use `subprocess`, `os.system()`, `eval()`, `exec()` with user data
-- **API Security**: Use parameterized queries, validate response data
-- **Memory**: Use generators for large datasets, avoid loading all data into memory
-- **Secure Storage**: Don't store secrets in code, use environment variables
+- Synchronous code (requests, sqlite) — async/httpx only
+- Direct DB access — REST API only
+- Storing tokens in memory — Valkey with TTL only
+- Shell commands — use API
+- Blocking operations (sleep) — use asyncio.sleep()
