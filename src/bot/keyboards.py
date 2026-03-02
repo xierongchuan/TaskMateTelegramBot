@@ -225,6 +225,19 @@ def shift_open_cancel() -> InlineKeyboardMarkup:
     )
 
 
+def schedule_selector(candidates: list[dict]) -> InlineKeyboardMarkup:
+    """Выбор расписания смены при неоднозначности."""
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"{c['name']} ({c['start_time']}–{c['end_time']})",
+            callback_data=f"shift_schedule:{c['id']}",
+        )]
+        for c in candidates
+    ]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="shift_open_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def shift_close_options(shift_id: int) -> InlineKeyboardMarkup:
     """Кнопки при закрытии смены: без фото / отмена."""
     return InlineKeyboardMarkup(

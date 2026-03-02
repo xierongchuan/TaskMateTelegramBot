@@ -28,6 +28,7 @@ class ShiftOpen(StatesGroup):
     """FSM: открытие смены."""
     selecting_dealership = State()
     waiting_photo = State()
+    selecting_schedule = State()
 
 
 class ShiftClose(StatesGroup):
@@ -225,6 +226,22 @@ async def on_shift_open_photo(
             photo=("opening_photo.jpg", content, "image/jpeg"),
         )
     except httpx.HTTPStatusError as e:
+        if e.response.status_code == 409:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = {}
+            if body.get("error_code") == "schedule_ambiguous":
+                candidates = body.get("candidates", [])
+                await state.update_data(
+                    photo_file_id=photo.file_id,
+                    dealership_id=dealership_id,
+                )
+                await state.set_state(ShiftOpen.selecting_schedule)
+                kb = keyboards.schedule_selector(candidates)
+                await message.answer(messages.shift_select_schedule(), reply_markup=kb)
+                return
+
         error_detail = ""
         try:
             body = e.response.json()
@@ -245,6 +262,78 @@ async def on_shift_open_photo(
     await state.clear()
     shift = result.get("data", result)
     await message.answer(messages.shift_opened_success(shift))
+
+
+@router.callback_query(ShiftOpen.selecting_schedule, F.data.startswith("shift_schedule:"))
+async def cb_shift_select_schedule(
+    callback: CallbackQuery, session: UserSession, state: FSMContext
+) -> None:
+    """Выбрать расписание смены при неоднозначности."""
+    schedule_id = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    file_id = data.get("photo_file_id")
+    dealership_id = data["dealership_id"]
+
+    # Повторно скачать фото по file_id
+    try:
+        file = await callback.bot.get_file(file_id)
+        file_bytes = await callback.bot.download_file(file.file_path)
+        content = file_bytes.read()
+    except Exception:
+        logger.exception("Не удалось скачать фото для открытия смены")
+        await state.clear()
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await callback.message.answer(messages.error_generic())
+        await callback.answer()
+        return
+
+    api = TaskMateAPI(token=session.token)
+    try:
+        result = await api.open_shift(
+            user_id=session.user_id,
+            dealership_id=dealership_id,
+            photo=("opening_photo.jpg", content, "image/jpeg"),
+            shift_schedule_id=schedule_id,
+        )
+    except httpx.HTTPStatusError as e:
+        error_detail = ""
+        try:
+            body = e.response.json()
+            error_detail = body.get("message", "")
+        except Exception:
+            pass
+        await state.clear()
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await callback.message.answer(
+            f"❌ Не удалось открыть смену.{f' {error_detail}' if error_detail else ''}"
+        )
+        await callback.answer()
+        return
+    except Exception:
+        logger.exception("Ошибка при открытии смены с расписанием")
+        await state.clear()
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await callback.message.answer(messages.error_generic())
+        await callback.answer()
+        return
+
+    await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    shift = result.get("data", result)
+    await callback.message.answer(messages.shift_opened_success(shift))
+    await callback.answer()
 
 
 # --- Закрытие смены ---
@@ -370,6 +459,12 @@ async def on_shift_open_unexpected(message: Message, state: FSMContext) -> None:
 async def on_shift_dealership_unexpected(message: Message, state: FSMContext) -> None:
     """Напомнить выбрать автосалон."""
     await message.answer("Пожалуйста, выберите автосалон из списка выше.")
+
+
+@router.message(ShiftOpen.selecting_schedule)
+async def on_shift_schedule_unexpected(message: Message, state: FSMContext) -> None:
+    """Напомнить выбрать расписание из клавиатуры."""
+    await message.answer("Пожалуйста, выберите расписание из списка выше.")
 
 
 @router.message(ShiftClose.waiting_photo)

@@ -506,6 +506,10 @@ def shift_select_dealership() -> str:
     return "🏢 Выберите автосалон для открытия смены:"
 
 
+def shift_select_schedule() -> str:
+    return "Доступно несколько смен. Выберите расписание:"
+
+
 def shift_open_photo_prompt() -> str:
     return "📸 Отправьте фото для открытия смены."
 

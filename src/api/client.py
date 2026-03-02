@@ -159,19 +159,33 @@ class TaskMateAPI:
         user_id: int,
         dealership_id: int,
         photo: tuple[str, bytes, str],
+        shift_schedule_id: int | None = None,
     ) -> dict[str, Any]:
         """POST /shifts — открыть смену с фото."""
         filename, content, mime = photo
+        data: dict[str, str] = {
+            "user_id": str(user_id),
+            "dealership_id": str(dealership_id),
+        }
+        if shift_schedule_id is not None:
+            data["shift_schedule_id"] = str(shift_schedule_id)
         resp = await self._request(
             "POST",
             "/shifts",
             files=[("opening_photo", (filename, content, mime))],
-            data={
-                "user_id": str(user_id),
-                "dealership_id": str(dealership_id),
-            },
+            data=data,
         )
         return resp.json()
+
+    async def get_available_schedules(self, dealership_id: int) -> list[dict[str, Any]]:
+        """GET /shifts/available-schedules — доступные расписания смен для автосалона."""
+        resp = await self._request(
+            "GET",
+            "/shifts/available-schedules",
+            params={"dealership_id": dealership_id},
+        )
+        result = resp.json()
+        return result.get("data", result) if isinstance(result, dict) else result
 
     async def close_shift(
         self,
