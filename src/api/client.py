@@ -212,7 +212,8 @@ class TaskMateAPI:
     async def get_user_dealerships(self) -> list[dict[str, Any]]:
         """Получить список автосалонов текущего пользователя."""
         result = await self.current_user()
-        user = result.get("user", result.get("data", result))
+        data = result.get("data", {})
+        user = data.get("user", data)
         dealerships: list[dict[str, Any]] = []
         # Основной автосалон
         if user.get("dealership"):

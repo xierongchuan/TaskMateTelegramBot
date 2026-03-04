@@ -59,8 +59,9 @@ async def cmd_login(message: Message) -> None:
         await message.answer(messages.error_generic())
         return
 
-    token = result.get("token", "")
-    user = result.get("user", {})
+    data = result.get("data", {})
+    token = data.get("token", "")
+    user = data.get("user", {})
 
     session = UserSession(
         token=token,
