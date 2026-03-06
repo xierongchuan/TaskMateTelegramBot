@@ -167,6 +167,7 @@ async def cb_task_detail(callback: CallbackQuery, session: UserSession) -> None:
     try:
         result = await api.get_task(task_id)
     except Exception:
+        logger.exception("Ошибка при загрузке задачи #%s", task_id)
         await callback.answer("Ошибка загрузки", show_alert=True)
         return
 

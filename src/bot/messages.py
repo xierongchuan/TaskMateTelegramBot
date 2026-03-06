@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
+
 
 
 def welcome() -> str:
@@ -13,6 +16,20 @@ def welcome() -> str:
         "Для начала работы авторизуйтесь:\n"
         "/login <i>логин</i> <i>пароль</i>\n\n"
         "Список команд: /help"
+    )
+
+
+def welcome_back(full_name: str, role: str) -> str:
+    role_labels = {
+        "owner": "Владелец",
+        "manager": "Менеджер",
+        "observer": "Наблюдатель",
+        "employee": "Сотрудник",
+    }
+    return (
+        f"👋 С возвращением, <b>{full_name}</b>!\n"
+        f"Роль: {role_labels.get(role, role)}\n\n"
+        "Используйте кнопки меню для навигации."
     )
 
 
@@ -80,7 +97,8 @@ def task_list(tasks: list[dict[str, Any]]) -> str:
     for t in tasks:
         status_icon = _status_icon(t.get("status", ""))
         priority_icon = _priority_icon(t.get("priority", "medium"))
-        deadline = _format_deadline(t.get("deadline"))
+        tz = _get_tz(t)
+        deadline = _format_deadline(t.get("deadline"), tz)
         lines.append(
             f"{status_icon} {priority_icon} <b>#{t['id']}</b> {t['title']}"
             f"\n   Дедлайн: {deadline}"
@@ -91,7 +109,8 @@ def task_list(tasks: list[dict[str, Any]]) -> str:
 def task_detail(t: dict[str, Any]) -> str:
     status_icon = _status_icon(t.get("status", ""))
     priority_icon = _priority_icon(t.get("priority", "medium"))
-    deadline = _format_deadline(t.get("deadline"))
+    tz = _get_tz(t)
+    deadline = _format_deadline(t.get("deadline"), tz)
     response_type = t.get("response_type", "")
 
     type_labels = {
@@ -131,7 +150,8 @@ def task_detail(t: dict[str, Any]) -> str:
 
 
 def shift_info(s: dict[str, Any]) -> str:
-    start = _format_datetime(s.get("shift_start"))
+    tz = _get_tz(s)
+    start = _format_datetime(s.get("shift_start"), tz)
     status_labels = {
         "open": "🟢 Открыта",
         "late": "🟡 Опоздание",
@@ -153,7 +173,8 @@ def shift_list(shifts: list[dict[str, Any]]) -> str:
         return "📅 У вас нет смен."
     lines = ["📅 <b>Ваши смены</b>\n"]
     for s in shifts[:10]:
-        start = _format_datetime(s.get("shift_start"))
+        tz = _get_tz(s)
+        start = _format_datetime(s.get("shift_start"), tz)
         status = s.get("status", "")
         icon = {"open": "🟢", "late": "🟡", "closed": "⚪", "replaced": "🔄"}.get(
             status, "⚪"
@@ -186,7 +207,8 @@ def proof_submitted() -> str:
 
 
 def notification_new_task(t: dict[str, Any]) -> str:
-    deadline = _format_deadline(t.get("deadline"))
+    tz = _get_tz(t)
+    deadline = _format_deadline(t.get("deadline"), tz)
     priority_icon = _priority_icon(t.get("priority", "medium"))
     return (
         f"🔔 <b>Новая задача #{t['id']}</b>\n\n"
@@ -196,9 +218,12 @@ def notification_new_task(t: dict[str, Any]) -> str:
 
 
 def notification_deadline_soon(t: dict[str, Any], minutes: int) -> str:
+    tz = _get_tz(t)
+    deadline = _format_deadline(t.get("deadline"), tz)
     return (
         f"⏰ <b>Дедлайн через {minutes} мин!</b>\n\n"
-        f"Задача #{t['id']}: {t['title']}"
+        f"Задача #{t['id']}: {t['title']}\n"
+        f"Дедлайн: {deadline}"
     )
 
 
@@ -257,7 +282,8 @@ def dashboard_summary(d: dict[str, Any], role: str = "") -> str:
         lines.append("🔴 <b>Просроченные задачи</b>\n")
         for t in overdue[:5]:
             pri = _priority_icon(t.get("priority", "medium"))
-            deadline = _format_deadline(t.get("deadline"))
+            tz = _get_tz(t)
+            deadline = _format_deadline(t.get("deadline"), tz)
             lines.append(f"  {pri} <b>#{t['id']}</b> {t.get('title', '')}")
             lines.append(f"     Дедлайн: {deadline}")
 
@@ -308,7 +334,8 @@ def task_list_item_text(t: dict[str, Any]) -> str:
     """Краткий текст задачи для списка (одно сообщение на задачу)."""
     status_icon = _status_icon(t.get("status", ""))
     priority_icon = _priority_icon(t.get("priority", "medium"))
-    deadline = _format_deadline(t.get("deadline"))
+    tz = _get_tz(t)
+    deadline = _format_deadline(t.get("deadline"), tz)
     return (
         f"{status_icon} {priority_icon} <b>#{t['id']}</b> {t['title']}\n"
         f"Дедлайн: {deadline}"
@@ -321,7 +348,8 @@ def overdue_task_list(tasks: list[dict[str, Any]]) -> str:
     lines = ["🔴 <b>Просроченные задачи</b>\n"]
     for t in tasks:
         priority_icon = _priority_icon(t.get("priority", "medium"))
-        deadline = _format_deadline(t.get("deadline"))
+        tz = _get_tz(t)
+        deadline = _format_deadline(t.get("deadline"), tz)
         lines.append(
             f"{priority_icon} <b>#{t['id']}</b> {t['title']}"
             f"\n   Дедлайн: {deadline}"
@@ -340,7 +368,8 @@ def review_task_card(
     response — одиночный response (обратная совместимость / индивидуальный просмотр).
     """
     priority_icon = _priority_icon(t.get("priority", "medium"))
-    deadline = _format_deadline(t.get("deadline"))
+    tz = _get_tz(t)
+    deadline = _format_deadline(t.get("deadline"), tz)
 
     # Собираем список pending responses
     pending = responses or ([response] if response else [])
@@ -426,7 +455,8 @@ def rejection_reason_prompt() -> str:
 def notification_pending_review(t: dict[str, Any], submitted_by: str = "") -> str:
     """Уведомление менеджеру о новой задаче на проверку."""
     priority_icon = _priority_icon(t.get("priority", "medium"))
-    deadline = _format_deadline(t.get("deadline"))
+    tz = _get_tz(t)
+    deadline = _format_deadline(t.get("deadline"), tz)
     lines = [
         f"📋 <b>Новая задача на проверку #{t['id']}</b>",
         "",
@@ -442,9 +472,10 @@ def shift_card_for_manager(s: dict[str, Any]) -> str:
     """Карточка смены для менеджера."""
     user_name = s.get("user", {}).get("full_name", "—")
     dealership = s.get("dealership", {}).get("name", "—")
-    start = _format_datetime(s.get("shift_start"))
-    sched_start = _format_datetime(s.get("scheduled_start"))
-    sched_end = _format_datetime(s.get("scheduled_end"))
+    tz = _get_tz(s)
+    start = _format_datetime(s.get("shift_start"), tz)
+    sched_start = _format_datetime(s.get("scheduled_start"), tz)
+    sched_end = _format_datetime(s.get("scheduled_end"), tz)
     status = s.get("status", "")
     late_min = s.get("late_minutes", 0)
 
@@ -481,7 +512,8 @@ def no_current_shift_with_action() -> str:
 
 
 def shift_info_with_action(s: dict[str, Any]) -> str:
-    start = _format_datetime(s.get("shift_start"))
+    tz = _get_tz(s)
+    start = _format_datetime(s.get("shift_start"), tz)
     status_labels = {
         "open": "🟢 Открыта",
         "late": "🟡 Опоздание",
@@ -519,7 +551,8 @@ def shift_close_photo_prompt() -> str:
 
 
 def shift_opened_success(s: dict[str, Any]) -> str:
-    start = _format_datetime(s.get("shift_start"))
+    tz = _get_tz(s)
+    start = _format_datetime(s.get("shift_start"), tz)
     status_labels = {
         "open": "🟢 Вовремя",
         "late": "🟡 Опоздание",
@@ -539,8 +572,9 @@ def shift_opened_success(s: dict[str, Any]) -> str:
 
 
 def shift_closed_success(s: dict[str, Any]) -> str:
-    start = _format_datetime(s.get("shift_start"))
-    end = _format_datetime(s.get("shift_end"))
+    tz = _get_tz(s)
+    start = _format_datetime(s.get("shift_start"), tz)
+    end = _format_datetime(s.get("shift_end"), tz)
     dealership = s.get("dealership", {}).get("name", "—")
     return (
         "🔒 <b>Смена закрыта</b>\n\n"
@@ -707,15 +741,44 @@ def _priority_icon(priority: str) -> str:
     return {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "")
 
 
-def _format_deadline(deadline: str | None) -> str:
+def _format_deadline(deadline: str | None, tz_name: str | None = None) -> str:
     if not deadline:
         return "—"
     try:
         dt = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        if tz_name:
+            try:
+                # Попытка как IANA-имя (Asia/Tashkent)
+                local_tz = ZoneInfo(tz_name)
+                dt = dt.astimezone(local_tz)
+                return dt.strftime("%d.%m.%Y %H:%M")
+            except (KeyError, Exception):
+                pass
+            try:
+                # Попытка как offset-строка (+05:00, +05:30, -03:00)
+                m = re.match(r'^([+-])(\d{1,2}):(\d{2})$', tz_name.strip())
+                if m:
+                    sign = 1 if m.group(1) == '+' else -1
+                    hours = int(m.group(2))
+                    minutes = int(m.group(3))
+                    offset = timedelta(hours=hours, minutes=minutes) * sign
+                    local_dt = dt.astimezone(timezone(offset))
+                    return local_dt.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                pass
         return dt.strftime("%d.%m.%Y %H:%M") + " (UTC)"
     except (ValueError, AttributeError):
         return deadline
 
 
-def _format_datetime(dt_str: str | None) -> str:
-    return _format_deadline(dt_str)
+
+def _format_datetime(dt_str: str | None, tz_name: str | None = None) -> str:
+    return _format_deadline(dt_str, tz_name)
+
+
+def _get_tz(obj: dict[str, Any]) -> str | None:
+    """Извлечь timezone из объекта (задача или смена) через dealership."""
+    d = obj.get("dealership")
+    if isinstance(d, dict):
+        return d.get("timezone")
+    return None
