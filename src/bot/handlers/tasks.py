@@ -145,7 +145,7 @@ async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
         await message.answer(messages.error_generic(), reply_markup=reply_kb)
         return
 
-    task = result
+    task = result.get("data", result)
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )
@@ -170,7 +170,7 @@ async def cb_task_detail(callback: CallbackQuery, session: UserSession) -> None:
         await callback.answer("Ошибка загрузки", show_alert=True)
         return
 
-    task = result
+    task = result.get("data", result)
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )

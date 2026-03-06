@@ -92,7 +92,6 @@ async def send_manager_shifts(
         today_utc = datetime.now(timezone.utc).date().isoformat()
         result = await api.get_shifts({
             "status": "open",
-            "date": today_utc,
             "per_page": 20,
         })
     except httpx.HTTPStatusError:
