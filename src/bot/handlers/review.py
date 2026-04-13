@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
-
-import httpx
 
 from src.api.client import TaskMateAPI
 from src.bot import keyboards, messages
@@ -22,6 +21,7 @@ router = Router()
 
 class RejectReason(StatesGroup):
     """FSM: ожидание причины отклонения."""
+
     waiting = State()
 
 
@@ -33,7 +33,9 @@ def _find_pending_responses(task: dict[str, Any]) -> list[dict[str, Any]]:
     return [r for r in task.get("responses", []) if r.get("status") == "pending_review"]
 
 
-def _get_first_proof_url(task: dict[str, Any], responses: list[dict[str, Any]]) -> str | None:
+def _get_first_proof_url(
+    task: dict[str, Any], responses: list[dict[str, Any]]
+) -> str | None:
     """URL первого image proof (individual или shared)."""
     for r in responses:
         for p in r.get("proofs", []):
@@ -90,10 +92,12 @@ async def send_review_list(
     """Отправить список задач на проверку — каждая отдельным сообщением."""
     api = TaskMateAPI(token=session.token)
     try:
-        result = await api.get_tasks({
-            "status": "pending_review",
-            "per_page": 20,
-        })
+        result = await api.get_tasks(
+            {
+                "status": "pending_review",
+                "per_page": 20,
+            }
+        )
     except httpx.HTTPStatusError:
         raise
     except Exception:
@@ -264,7 +268,8 @@ async def cb_review_individual(callback: CallbackQuery, session: UserSession) ->
     try:
         if callback.message.photo:
             await callback.message.edit_caption(
-                caption=callback.message.caption + "\n\n📋 <i>Индивидуальный просмотр:</i>",
+                caption=callback.message.caption
+                + "\n\n📋 <i>Индивидуальный просмотр:</i>",
                 reply_markup=None,
             )
         else:
@@ -337,7 +342,9 @@ async def on_reject_reason(
             return
 
         task_data = result.get("data", {})
-        rejected_count = len([r for r in task_data.get("responses", []) if r.get("status") == "rejected"])
+        rejected_count = len(
+            [r for r in task_data.get("responses", []) if r.get("status") == "rejected"]
+        )
         text = messages.review_rejected_msg(task_id, reason, count=rejected_count)
     else:
         response_id = data["response_id"]

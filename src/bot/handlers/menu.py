@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
 from aiogram import F, Router
 from aiogram.types import Message, ReplyKeyboardMarkup
-
-import httpx
 
 from src.api.client import TaskMateAPI
 from src.bot import keyboards, messages
@@ -101,6 +100,7 @@ async def btn_shifts(message: Message, session: UserSession, **kwargs) -> None:
     kb = _kb(kwargs)
     if session.role in ("manager", "owner"):
         from src.bot.handlers.shifts import send_manager_shifts
+
         await send_manager_shifts(message, session, reply_kb=kb)
     else:
         api = TaskMateAPI(token=session.token)
@@ -132,13 +132,16 @@ async def btn_dashboard(message: Message, session: UserSession, **kwargs) -> Non
         return
 
     data = result.get("data", result)
-    await message.answer(messages.dashboard_summary(data, role=session.role), reply_markup=kb)
+    await message.answer(
+        messages.dashboard_summary(data, role=session.role), reply_markup=kb
+    )
 
 
 @router.message(F.text == keyboards.BTN_PENDING_REVIEW)
 async def btn_pending_review(message: Message, session: UserSession, **kwargs) -> None:
     """Задачи на проверку (manager/owner) — каждая отдельным сообщением."""
     from src.bot.handlers.review import send_review_list
+
     await send_review_list(message, session, reply_kb=_kb(kwargs))
 
 
@@ -176,4 +179,6 @@ async def btn_logout(message: Message, **kwargs) -> None:
 
     await clear_notified(message.chat.id)
     await delete_session(message.chat.id)
-    await message.answer(messages.logout_success(), reply_markup=keyboards.remove_menu())
+    await message.answer(
+        messages.logout_success(), reply_markup=keyboards.remove_menu()
+    )

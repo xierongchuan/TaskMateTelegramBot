@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from aiogram import Bot
-
 import httpx
+from aiogram import Bot
 
 from src.api.client import TaskMateAPI
 from src.bot import messages

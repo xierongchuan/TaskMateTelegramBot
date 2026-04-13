@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
+import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -16,8 +17,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-
-import httpx
 
 from src.api.client import TaskMateAPI
 from src.bot import keyboards, messages
@@ -58,35 +57,46 @@ async def _build_delegation_kb(
 
     # Проверить, есть ли pending outgoing делегация
     try:
-        result = await api.get_delegations({
-            "task_id": task["id"],
-            "direction": "outgoing",
-            "status": "pending",
-            "per_page": 1,
-        })
+        result = await api.get_delegations(
+            {
+                "task_id": task["id"],
+                "direction": "outgoing",
+                "status": "pending",
+                "per_page": 1,
+            }
+        )
         pending = result.get("data", [])
     except Exception:
         return None
 
     if pending:
         dlg_id = pending[0]["id"]
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="❌ Отменить делегирование",
-                callback_data=f"dlg_cancel:{dlg_id}",
-            )]
-        ])
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ Отменить делегирование",
+                        callback_data=f"dlg_cancel:{dlg_id}",
+                    )
+                ]
+            ]
+        )
 
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🔄 Делегировать",
-            callback_data=f"dlg_start:{task['id']}",
-        )]
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 Делегировать",
+                    callback_data=f"dlg_start:{task['id']}",
+                )
+            ]
+        ]
+    )
 
 
 class ProofUpload(StatesGroup):
     """FSM: загрузка доказательств."""
+
     collecting = State()
 
 
@@ -137,7 +147,9 @@ async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
         result = await api.get_task(task_id)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
-            await message.answer(f"Задача #{task_id} не найдена.", reply_markup=reply_kb)
+            await message.answer(
+                f"Задача #{task_id} не найдена.", reply_markup=reply_kb
+            )
             return
         raise
     except Exception:
@@ -270,7 +282,10 @@ async def on_proof_photo(message: Message, state: FSMContext) -> None:
 
     if len(files) >= MAX_PROOF_FILES:
         kb = keyboards.proof_actions(data["task_id"])
-        await message.answer(f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».", reply_markup=kb)
+        await message.answer(
+            f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».",
+            reply_markup=kb,
+        )
         return
 
     photo = message.photo[-1]  # наибольший размер
@@ -283,11 +298,13 @@ async def on_proof_photo(message: Message, state: FSMContext) -> None:
         await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
         return
 
-    files.append({
-        "name": f"photo_{len(files) + 1}.jpg",
-        "content": content,
-        "mime": "image/jpeg",
-    })
+    files.append(
+        {
+            "name": f"photo_{len(files) + 1}.jpg",
+            "content": content,
+            "mime": "image/jpeg",
+        }
+    )
     await state.update_data(files=files, total_bytes=total_bytes + len(content))
 
     kb = keyboards.proof_actions(data["task_id"])
@@ -303,7 +320,10 @@ async def on_proof_document(message: Message, state: FSMContext) -> None:
 
     if len(files) >= MAX_PROOF_FILES:
         kb = keyboards.proof_actions(data["task_id"])
-        await message.answer(f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».", reply_markup=kb)
+        await message.answer(
+            f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».",
+            reply_markup=kb,
+        )
         return
 
     doc = message.document
@@ -316,11 +336,13 @@ async def on_proof_document(message: Message, state: FSMContext) -> None:
         await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
         return
 
-    files.append({
-        "name": doc.file_name or f"file_{len(files) + 1}",
-        "content": content,
-        "mime": doc.mime_type or "application/octet-stream",
-    })
+    files.append(
+        {
+            "name": doc.file_name or f"file_{len(files) + 1}",
+            "content": content,
+            "mime": doc.mime_type or "application/octet-stream",
+        }
+    )
     await state.update_data(files=files, total_bytes=total_bytes + len(content))
 
     kb = keyboards.proof_actions(data["task_id"])
@@ -336,7 +358,10 @@ async def on_proof_video(message: Message, state: FSMContext) -> None:
 
     if len(files) >= MAX_PROOF_FILES:
         kb = keyboards.proof_actions(data["task_id"])
-        await message.answer(f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».", reply_markup=kb)
+        await message.answer(
+            f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».",
+            reply_markup=kb,
+        )
         return
 
     video = message.video
@@ -349,11 +374,13 @@ async def on_proof_video(message: Message, state: FSMContext) -> None:
         await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
         return
 
-    files.append({
-        "name": video.file_name or f"video_{len(files) + 1}.mp4",
-        "content": content,
-        "mime": video.mime_type or "video/mp4",
-    })
+    files.append(
+        {
+            "name": video.file_name or f"video_{len(files) + 1}.mp4",
+            "content": content,
+            "mime": video.mime_type or "video/mp4",
+        }
+    )
     await state.update_data(files=files, total_bytes=total_bytes + len(content))
 
     kb = keyboards.proof_actions(data["task_id"])
@@ -377,9 +404,7 @@ async def cb_proof_submit(
 
     api = TaskMateAPI(token=session.token)
     try:
-        await api.update_task_status(
-            task_id, "pending_review", proof_files=proof_files
-        )
+        await api.update_task_status(task_id, "pending_review", proof_files=proof_files)
     except Exception:
         logger.exception("Ошибка отправки доказательств")
         await callback.answer("Ошибка отправки", show_alert=True)

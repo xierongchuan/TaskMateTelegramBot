@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-
-import httpx
 
 from src.api.client import TaskMateAPI
 from src.bot import keyboards, messages
@@ -50,7 +49,9 @@ async def cmd_login(message: Message) -> None:
         if e.response.status_code == 401:
             await message.answer(messages.login_failed("Неверный логин или пароль"))
         elif e.response.status_code == 429:
-            await message.answer(messages.login_failed("Слишком много попыток. Попробуйте позже"))
+            await message.answer(
+                messages.login_failed("Слишком много попыток. Попробуйте позже")
+            )
         else:
             await message.answer(messages.login_failed())
         return
@@ -81,7 +82,9 @@ async def cmd_login(message: Message) -> None:
             for category in ("tasks", "deadlines", "overdue", "reviews"):
                 await bulk_add_notified(message.chat.id, category, task_ids)
     except Exception:
-        logger.debug("Не удалось затушить уведомления при логине для %s", message.chat.id)
+        logger.debug(
+            "Не удалось затушить уведомления при логине для %s", message.chat.id
+        )
 
     await message.answer(
         messages.login_success(session.full_name, session.role),
@@ -105,4 +108,6 @@ async def cmd_logout(message: Message, **kwargs) -> None:
 
     await clear_notified(message.chat.id)
     await delete_session(message.chat.id)
-    await message.answer(messages.logout_success(), reply_markup=keyboards.remove_menu())
+    await message.answer(
+        messages.logout_success(), reply_markup=keyboards.remove_menu()
+    )
