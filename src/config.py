@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Интервал polling дедлайнов (секунды)
     polling_interval_deadlines: int = 300
 
+    # Интервал polling новых задач и просроченных (секунды)
+    polling_interval_new_tasks: int = 120
+    polling_interval_overdue: int = 600
+
     # TTL сессий в Valkey (секунды, по умолчанию 7 дней)
     session_ttl_seconds: int = 604800
 
