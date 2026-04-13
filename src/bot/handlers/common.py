@@ -4,8 +4,8 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from src.bot import keyboards, messages
-from src.storage.sessions import get_session
+from ...storage.sessions import get_session
+from .. import keyboards, messages
 
 router = Router()
 
@@ -15,7 +15,9 @@ async def cmd_start(message: Message) -> None:
     session = await get_session(message.chat.id)
     if session is not None:
         kb = keyboards.main_menu(session.role)
-        await message.answer(messages.welcome_back(session.full_name, session.role), reply_markup=kb)
+        await message.answer(
+            messages.welcome_back(session.full_name, session.role), reply_markup=kb
+        )
     else:
         await message.answer(messages.welcome())
 

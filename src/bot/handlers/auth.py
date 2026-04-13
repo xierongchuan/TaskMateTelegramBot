@@ -9,10 +9,10 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from src.api.client import TaskMateAPI
-from src.bot import keyboards, messages
-from src.storage.notifications import bulk_add_notified, clear_notified
-from src.storage.sessions import UserSession, delete_session, get_session, save_session
+from ...api.client import TaskMateAPI
+from ...storage.notifications import bulk_add_notified, clear_notified
+from ...storage.sessions import UserSession, delete_session, get_session, save_session
+from .. import keyboards, messages
 
 logger = logging.getLogger(__name__)
 router = Router()

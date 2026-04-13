@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
+import httpx
 from aiogram import BaseMiddleware, Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import Message, CallbackQuery, TelegramObject
+from aiogram.types import CallbackQuery, Message, TelegramObject
 
-import httpx
-
-from src.bot import keyboards
-from src.config import settings
-from src.storage.notifications import clear_notified
-from src.storage.sessions import delete_session, get_session, refresh_session_ttl
+from ..config import settings
+from ..storage.notifications import clear_notified
+from ..storage.sessions import delete_session, get_session, refresh_session_ttl
+from . import keyboards
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,8 @@ class AuthMiddleware(BaseMiddleware):
             session = await get_session(chat_id)
             if session is None:
                 if isinstance(event, Message):
-                    from src.bot import messages
+                    from . import messages
+
                     await event.answer(messages.not_authorized())
                 elif isinstance(event, CallbackQuery):
                     await event.answer("Вы не авторизованы", show_alert=True)
@@ -77,14 +77,17 @@ class AuthMiddleware(BaseMiddleware):
                 await clear_notified(chat_id)
                 logger.info("Сессия просрочена для chat_id=%s, сессия удалена", chat_id)
 
-                from src.bot import messages
+                from . import messages
+
                 if isinstance(event, Message):
                     await event.answer(
                         messages.not_authorized(),
                         reply_markup=keyboards.remove_menu(),
                     )
                 elif isinstance(event, CallbackQuery):
-                    await event.answer("Сессия истекла. Используйте /login", show_alert=True)
+                    await event.answer(
+                        "Сессия истекла. Используйте /login", show_alert=True
+                    )
                 return
             raise
 

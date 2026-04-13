@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import redis.asyncio as redis
 
-from src.config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 

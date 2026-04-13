@@ -18,9 +18,9 @@ from aiogram.types import (
     Message,
 )
 
-from src.api.client import TaskMateAPI
-from src.bot import keyboards, messages
-from src.storage.sessions import UserSession
+from ...api.client import TaskMateAPI
+from ...storage.sessions import UserSession
+from .. import keyboards, messages
 
 logger = logging.getLogger(__name__)
 router = Router()

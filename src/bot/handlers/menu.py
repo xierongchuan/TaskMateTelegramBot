@@ -9,10 +9,10 @@ import httpx
 from aiogram import F, Router
 from aiogram.types import Message, ReplyKeyboardMarkup
 
-from src.api.client import TaskMateAPI
-from src.bot import keyboards, messages
-from src.storage.notifications import clear_notified
-from src.storage.sessions import UserSession, delete_session, get_session
+from ...api.client import TaskMateAPI
+from ...storage.notifications import clear_notified
+from ...storage.sessions import UserSession, delete_session, get_session
+from .. import keyboards, messages
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -99,7 +99,7 @@ async def btn_shifts(message: Message, session: UserSession, **kwargs) -> None:
     """Смены — для менеджеров показать открытые с фото, для остальных — свои."""
     kb = _kb(kwargs)
     if session.role in ("manager", "owner"):
-        from src.bot.handlers.shifts import send_manager_shifts
+        from .shifts import send_manager_shifts
 
         await send_manager_shifts(message, session, reply_kb=kb)
     else:
@@ -140,7 +140,7 @@ async def btn_dashboard(message: Message, session: UserSession, **kwargs) -> Non
 @router.message(F.text == keyboards.BTN_PENDING_REVIEW)
 async def btn_pending_review(message: Message, session: UserSession, **kwargs) -> None:
     """Задачи на проверку (manager/owner) — каждая отдельным сообщением."""
-    from src.bot.handlers.review import send_review_list
+    from .review import send_review_list
 
     await send_review_list(message, session, reply_kb=_kb(kwargs))
 

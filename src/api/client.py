@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from src.config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +92,7 @@ class TaskMateAPI:
 
     # --- Задачи ---
 
-    async def get_tasks(
-        self, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def get_tasks(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """GET /tasks — список задач."""
         resp = await self._request("GET", "/tasks", params=params)
         return resp.json()
@@ -135,9 +133,7 @@ class TaskMateAPI:
             body: dict[str, Any] = {"status": status}
             if complete_for_all:
                 body["complete_for_all"] = True
-            resp = await self._request(
-                "PATCH", f"/tasks/{task_id}/status", json=body
-            )
+            resp = await self._request("PATCH", f"/tasks/{task_id}/status", json=body)
         return resp.json()
 
     # --- Смены ---
@@ -232,9 +228,7 @@ class TaskMateAPI:
         resp = await self._request("POST", f"/task-responses/{response_id}/approve")
         return resp.json()
 
-    async def reject_response(
-        self, response_id: int, reason: str
-    ) -> dict[str, Any]:
+    async def reject_response(self, response_id: int, reason: str) -> dict[str, Any]:
         """POST /task-responses/{id}/reject — отклонить ответ."""
         resp = await self._request(
             "POST",
@@ -243,9 +237,7 @@ class TaskMateAPI:
         )
         return resp.json()
 
-    async def reject_all_responses(
-        self, task_id: int, reason: str
-    ) -> dict[str, Any]:
+    async def reject_all_responses(self, task_id: int, reason: str) -> dict[str, Any]:
         """POST /tasks/{id}/reject-all-responses — отклонить все ответы задачи."""
         resp = await self._request(
             "POST",
@@ -256,9 +248,7 @@ class TaskMateAPI:
 
     # --- Смены (все) ---
 
-    async def get_shifts(
-        self, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def get_shifts(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """GET /shifts — список всех смен."""
         resp = await self._request("GET", "/shifts", params=params)
         return resp.json()
@@ -274,7 +264,8 @@ class TaskMateAPI:
         """GET /shift-photos/{id}/{type} — скачать фото смены."""
         try:
             resp = await self._request(
-                "GET", f"/shift-photos/{shift_id}/{photo_type}",
+                "GET",
+                f"/shift-photos/{shift_id}/{photo_type}",
                 raise_for_status=False,
             )
             if resp.status_code == 200:
@@ -316,9 +307,7 @@ class TaskMateAPI:
         body: dict[str, Any] = {"to_user_id": to_user_id}
         if reason:
             body["reason"] = reason
-        resp = await self._request(
-            "POST", f"/tasks/{task_id}/delegations", json=body
-        )
+        resp = await self._request("POST", f"/tasks/{task_id}/delegations", json=body)
         return resp.json()
 
     async def get_delegations(
@@ -330,9 +319,7 @@ class TaskMateAPI:
 
     async def accept_delegation(self, delegation_id: int) -> dict[str, Any]:
         """POST /task-delegations/{id}/accept — принять делегирование."""
-        resp = await self._request(
-            "POST", f"/task-delegations/{delegation_id}/accept"
-        )
+        resp = await self._request("POST", f"/task-delegations/{delegation_id}/accept")
         return resp.json()
 
     async def reject_delegation(
@@ -348,14 +335,10 @@ class TaskMateAPI:
 
     async def cancel_delegation(self, delegation_id: int) -> dict[str, Any]:
         """POST /task-delegations/{id}/cancel — отменить делегирование."""
-        resp = await self._request(
-            "POST", f"/task-delegations/{delegation_id}/cancel"
-        )
+        resp = await self._request("POST", f"/task-delegations/{delegation_id}/cancel")
         return resp.json()
 
-    async def get_users(
-        self, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def get_users(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """GET /users — список пользователей."""
         resp = await self._request("GET", "/users", params=params)
         return resp.json()

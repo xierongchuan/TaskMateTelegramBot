@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.storage.sessions import get_redis
+from .sessions import get_redis
 
 KEY_PREFIX = "tmbot:notified:"
 CATEGORIES = ("tasks", "deadlines", "overdue", "reviews", "delegations")

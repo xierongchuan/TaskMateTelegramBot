@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 import httpx
 from aiogram import Bot
 
-from src.api.client import TaskMateAPI
-from src.bot import messages
-from src.storage.notifications import add_notified, is_notified
-from src.storage.sessions import get_all_sessions
+from ..api.client import TaskMateAPI
+from ..bot import messages
+from ..storage.notifications import add_notified, is_notified
+from ..storage.sessions import get_all_sessions
 
 logger = logging.getLogger(__name__)
 

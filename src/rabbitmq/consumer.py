@@ -9,10 +9,10 @@ import time
 import aio_pika
 from aiogram import Bot
 
-from src.bot import keyboards, messages
-from src.config import settings
-from src.storage.notifications import add_notified, is_notified
-from src.storage.sessions import UserSession, get_all_sessions
+from ..bot import keyboards, messages
+from ..config import settings
+from ..storage.notifications import add_notified, is_notified
+from ..storage.sessions import UserSession, get_all_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -140,14 +140,19 @@ def _format_message(event: str, task: dict, payload: dict) -> str | None:
         return messages.notification_rejected(task, payload.get("reason", ""))
     if event == "task.delegation_requested":
         return messages.delegation_requested_notification(
-            task, payload.get("from_user", ""), payload.get("reason", ""),
+            task,
+            payload.get("from_user", ""),
+            payload.get("reason", ""),
         )
     if event == "task.delegation_accepted":
         return messages.delegation_accepted_notification(
-            task, payload.get("to_user", ""),
+            task,
+            payload.get("to_user", ""),
         )
     if event == "task.delegation_rejected":
         return messages.delegation_rejected_notification(
-            task, payload.get("to_user", ""), payload.get("reason", ""),
+            task,
+            payload.get("to_user", ""),
+            payload.get("reason", ""),
         )
     return None

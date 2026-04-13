@@ -5,17 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-import httpx
-
-from src.api.client import TaskMateAPI
-from src.bot import keyboards, messages
-from src.storage.sessions import UserSession
+from ...api.client import TaskMateAPI
+from ...storage.sessions import UserSession
+from .. import keyboards, messages
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -23,11 +22,13 @@ router = Router()
 
 class DelegationReason(StatesGroup):
     """FSM: ожидание опциональной причины делегирования."""
+
     waiting = State()
 
 
 class DelegationRejectReason(StatesGroup):
     """FSM: ожидание обязательной причины отклонения делегирования."""
+
     waiting = State()
 
 
@@ -83,7 +84,8 @@ async def cmd_delegations(message: Message, session: UserSession, **kwargs) -> N
 
 @router.callback_query(F.data.startswith("dlg_start:"))
 async def cb_delegation_start(
-    callback: CallbackQuery, session: UserSession,
+    callback: CallbackQuery,
+    session: UserSession,
 ) -> None:
     """Начало делегирования: показать список сотрудников."""
     task_id = int(callback.data.split(":")[1])
@@ -122,8 +124,7 @@ async def cb_delegation_start(
             assigned_ids.add(uid)
 
     eligible = [
-        u for u in users
-        if u["id"] != session.user_id and u["id"] not in assigned_ids
+        u for u in users if u["id"] != session.user_id and u["id"] not in assigned_ids
     ]
 
     if not eligible:
@@ -141,7 +142,8 @@ async def cb_delegation_start(
 
 @router.callback_query(F.data.startswith("dlg_user:"))
 async def cb_delegation_user_selected(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Пользователь выбран — запросить причину."""
     parts = callback.data.split(":")
@@ -178,7 +180,9 @@ async def cb_delegation_user_selected(
 
 @router.message(DelegationReason.waiting, F.text)
 async def on_delegation_reason_text(
-    message: Message, session: UserSession, state: FSMContext,
+    message: Message,
+    session: UserSession,
+    state: FSMContext,
 ) -> None:
     """Получена причина делегирования — создать запрос."""
     data = await state.get_data()
@@ -188,7 +192,9 @@ async def on_delegation_reason_text(
     api = TaskMateAPI(token=session.token)
     try:
         await api.create_delegation(
-            data["task_id"], data["to_user_id"], reason=reason,
+            data["task_id"],
+            data["to_user_id"],
+            reason=reason,
         )
     except httpx.HTTPStatusError as e:
         error_msg = "Ошибка"
@@ -210,7 +216,9 @@ async def on_delegation_reason_text(
 
 @router.callback_query(F.data.startswith("dlg_skip:"))
 async def cb_delegation_skip_reason(
-    callback: CallbackQuery, session: UserSession, state: FSMContext,
+    callback: CallbackQuery,
+    session: UserSession,
+    state: FSMContext,
 ) -> None:
     """Пропустить причину — создать делегацию без причины."""
     parts = callback.data.split(":")
@@ -252,7 +260,8 @@ async def cb_delegation_skip_reason(
 
 @router.callback_query(F.data.startswith("dlg_cancel_flow:"))
 async def cb_delegation_cancel_flow(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Отмена процесса создания делегации."""
     await state.clear()
@@ -268,7 +277,8 @@ async def cb_delegation_cancel_flow(
 
 @router.callback_query(F.data.startswith("dlg_accept:"))
 async def cb_delegation_accept(
-    callback: CallbackQuery, session: UserSession,
+    callback: CallbackQuery,
+    session: UserSession,
 ) -> None:
     """Принять делегирование."""
     delegation_id = int(callback.data.split(":")[1])
@@ -297,7 +307,8 @@ async def cb_delegation_accept(
 
 @router.callback_query(F.data.startswith("dlg_reject:"))
 async def cb_delegation_reject_start(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Начать отклонение — запросить причину."""
     delegation_id = int(callback.data.split(":")[1])
@@ -318,7 +329,9 @@ async def cb_delegation_reject_start(
 
 @router.message(DelegationRejectReason.waiting, F.text)
 async def on_delegation_reject_reason(
-    message: Message, session: UserSession, state: FSMContext,
+    message: Message,
+    session: UserSession,
+    state: FSMContext,
 ) -> None:
     """Получена причина — отклонить делегирование."""
     data = await state.get_data()
@@ -346,7 +359,8 @@ async def on_delegation_reject_reason(
 
 @router.callback_query(F.data == "dlg_reject_cancel")
 async def cb_delegation_reject_cancel(
-    callback: CallbackQuery, state: FSMContext,
+    callback: CallbackQuery,
+    state: FSMContext,
 ) -> None:
     """Отмена ввода причины отклонения."""
     await state.clear()
@@ -362,7 +376,8 @@ async def cb_delegation_reject_cancel(
 
 @router.callback_query(F.data.startswith("dlg_cancel:"))
 async def cb_delegation_cancel(
-    callback: CallbackQuery, session: UserSession,
+    callback: CallbackQuery,
+    session: UserSession,
 ) -> None:
     """Отменить исходящую делегацию."""
     delegation_id = int(callback.data.split(":")[1])
@@ -394,7 +409,8 @@ async def cb_delegation_cancel(
 
 @router.message(DelegationReason.waiting)
 async def on_delegation_reason_unexpected(
-    message: Message, state: FSMContext,
+    message: Message,
+    state: FSMContext,
 ) -> None:
     """Неожиданное сообщение при ожидании причины делегирования."""
     data = await state.get_data()
@@ -407,7 +423,8 @@ async def on_delegation_reason_unexpected(
 
 @router.message(DelegationRejectReason.waiting)
 async def on_delegation_reject_reason_unexpected(
-    message: Message, state: FSMContext,
+    message: Message,
+    state: FSMContext,
 ) -> None:
     """Неожиданное сообщение при ожидании причины отклонения."""
     kb = keyboards.delegation_reject_cancel()

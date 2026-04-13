@@ -5,17 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-import httpx
-
-from src.api.client import TaskMateAPI
-from src.bot import keyboards, messages
-from src.storage.sessions import UserSession
+from ...api.client import TaskMateAPI
+from ...storage.sessions import UserSession
+from .. import keyboards, messages
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -26,6 +25,7 @@ router = Router()
 
 class ShiftOpen(StatesGroup):
     """FSM: открытие смены."""
+
     selecting_dealership = State()
     waiting_photo = State()
     selecting_schedule = State()
@@ -33,6 +33,7 @@ class ShiftOpen(StatesGroup):
 
 class ShiftClose(StatesGroup):
     """FSM: закрытие смены."""
+
     waiting_photo = State()
 
 
@@ -87,10 +88,12 @@ async def send_manager_shifts(
     """Показать открытые смены сегодня — каждая отдельным сообщением с фото."""
     api = TaskMateAPI(token=session.token)
     try:
-        result = await api.get_shifts({
-            "status": "open",
-            "per_page": 20,
-        })
+        result = await api.get_shifts(
+            {
+                "status": "open",
+                "per_page": 20,
+            }
+        )
     except httpx.HTTPStatusError:
         raise
     except Exception:
@@ -163,18 +166,26 @@ async def cb_shift_open(
         await state.set_state(ShiftOpen.waiting_photo)
         await state.update_data(dealership_id=dealerships[0]["id"])
         kb = keyboards.shift_open_cancel()
-        await callback.message.answer(messages.shift_open_photo_prompt(), reply_markup=kb)
+        await callback.message.answer(
+            messages.shift_open_photo_prompt(), reply_markup=kb
+        )
     else:
         # Несколько — выбрать
         await state.set_state(ShiftOpen.selecting_dealership)
         kb = keyboards.dealership_selector(dealerships)
-        await callback.message.answer(messages.shift_select_dealership(), reply_markup=kb)
+        await callback.message.answer(
+            messages.shift_select_dealership(), reply_markup=kb
+        )
 
     await callback.answer()
 
 
-@router.callback_query(ShiftOpen.selecting_dealership, F.data.startswith("shift_dealer:"))
-async def cb_shift_select_dealership(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(
+    ShiftOpen.selecting_dealership, F.data.startswith("shift_dealer:")
+)
+async def cb_shift_select_dealership(
+    callback: CallbackQuery, state: FSMContext
+) -> None:
     """Выбрать автосалон для открытия смены."""
     dealership_id = int(callback.data.split(":")[1])
     await state.set_state(ShiftOpen.waiting_photo)
@@ -260,7 +271,9 @@ async def on_shift_open_photo(
     await message.answer(messages.shift_opened_success(shift))
 
 
-@router.callback_query(ShiftOpen.selecting_schedule, F.data.startswith("shift_schedule:"))
+@router.callback_query(
+    ShiftOpen.selecting_schedule, F.data.startswith("shift_schedule:")
+)
 async def cb_shift_select_schedule(
     callback: CallbackQuery, session: UserSession, state: FSMContext
 ) -> None:
