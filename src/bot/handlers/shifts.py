@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any
 
 import httpx
@@ -90,8 +91,8 @@ async def send_manager_shifts(
     try:
         result = await api.get_shifts(
             {
-                "status": "open",
-                "per_page": 20,
+                "per_page": 50,
+                "date": date.today().isoformat(),
             }
         )
     except httpx.HTTPStatusError:
@@ -102,6 +103,9 @@ async def send_manager_shifts(
         return
 
     shifts = result.get("data", [])
+    # Filter for open and late shifts (late considered open)
+    open_statuses = {"open", "late"}
+    shifts = [s for s in shifts if s.get("status") in open_statuses]
     if not shifts:
         await message.answer(messages.no_open_shifts(), reply_markup=reply_kb)
         return

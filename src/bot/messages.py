@@ -140,6 +140,11 @@ def task_detail(t: dict[str, Any]) -> str:
         creator = t["creator"]
         lines.append(f"Автор: {creator.get('full_name', '—')}")
 
+    if t.get("assignments"):
+        assignees = [a.get("user", {}).get("full_name", "—") for a in t["assignments"]]
+        if assignees:
+            lines.append(f"Исполнители: {', '.join(assignees)}")
+
     # Показать причину отклонения для rejected задач
     if t.get("status") == "rejected":
         reason = _extract_reject_reason(t)
@@ -336,9 +341,13 @@ def task_list_item_text(t: dict[str, Any]) -> str:
     priority_icon = _priority_icon(t.get("priority", "medium"))
     tz = _get_tz(t)
     deadline = _format_deadline(t.get("deadline"), tz)
+    assignees = []
+    if t.get("assignments"):
+        assignees = [a.get("user", {}).get("full_name", "—") for a in t["assignments"]]
+    assignee_text = f"\nИсполнители: {', '.join(assignees)}" if assignees else ""
     return (
         f"{status_icon} {priority_icon} <b>#{t['id']}</b> {t['title']}\n"
-        f"Дедлайн: {deadline}"
+        f"Дедлайн: {deadline}{assignee_text}"
     )
 
 
