@@ -295,6 +295,11 @@ class TaskMateAPI:
         resp = await self._request("GET", "/dashboard", params=params)
         return resp.json()
 
+    async def get_dealership(self, dealership_id: int) -> dict[str, Any]:
+        """GET /dealerships/{id} — получить автосалон по id (включает timezone)."""
+        resp = await self._request("GET", f"/dealerships/{dealership_id}")
+        return resp.json()
+
     # --- Делегирование ---
 
     async def create_delegation(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from datetime import date
 from typing import Any
 
@@ -16,6 +17,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from ...api.client import TaskMateAPI
 from ...storage.sessions import UserSession
 from .. import keyboards, messages
+from ...utils.tz_utils import attach_dealership_timezone
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -62,6 +64,10 @@ async def cmd_shift(message: Message, session: UserSession, **kwargs) -> None:
     if not shift:
         await message.answer(messages.no_current_shift(), reply_markup=kb)
         return
+    try:
+        await attach_dealership_timezone(api, shift)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для смены %s", shift.get("id"))
     await message.answer(messages.shift_info(shift), reply_markup=kb)
 
 
@@ -80,6 +86,11 @@ async def cmd_shifts(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     shifts = result.get("data", [])
+    if shifts:
+        try:
+            await asyncio.gather(*(attach_dealership_timezone(api, s) for s in shifts))
+        except Exception:
+            logger.debug("Не удалось прикрепить timezone для списка смен")
     await message.answer(messages.shift_list(shifts), reply_markup=kb)
 
 
@@ -109,6 +120,11 @@ async def send_manager_shifts(
     if not shifts:
         await message.answer(messages.no_open_shifts(), reply_markup=reply_kb)
         return
+
+    try:
+        await asyncio.gather(*(attach_dealership_timezone(api, s) for s in shifts))
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для менеджерских смен")
 
     for shift in shifts:
         text = messages.shift_card_for_manager(shift)
@@ -272,6 +288,10 @@ async def on_shift_open_photo(
 
     await state.clear()
     shift = result.get("data", result)
+    try:
+        await attach_dealership_timezone(api, shift)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для только что открытой смены")
     await message.answer(messages.shift_opened_success(shift))
 
 
@@ -345,6 +365,10 @@ async def cb_shift_select_schedule(
     except Exception:
         pass
     shift = result.get("data", result)
+    try:
+        await attach_dealership_timezone(api, shift)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для только что открытой смены (schedule)")
     await callback.message.answer(messages.shift_opened_success(shift))
     await callback.answer()
 
@@ -396,6 +420,10 @@ async def cb_shift_close_nophoto(
     except Exception:
         pass
     shift = result.get("data", result)
+    try:
+        await attach_dealership_timezone(api, shift)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для только что закрытой смены")
     await callback.message.answer(messages.shift_closed_success(shift))
     await callback.answer()
 
@@ -452,6 +480,10 @@ async def on_shift_close_photo(
 
     await state.clear()
     shift = result.get("data", result)
+    try:
+        await attach_dealership_timezone(api, shift)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для закрытой смены (photo)")
     await message.answer(messages.shift_closed_success(shift))
 
 

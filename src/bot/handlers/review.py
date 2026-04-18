@@ -14,6 +14,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from ...api.client import TaskMateAPI
 from ...storage.sessions import UserSession
 from .. import keyboards, messages
+from ...utils.tz_utils import attach_dealership_timezone
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -56,6 +57,11 @@ async def _send_task_card(
     kb: Any,
 ) -> None:
     """Отправить карточку задачи с фото (если есть)."""
+    try:
+        await attach_dealership_timezone(api, task)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для карточки задачи %s", task.get("id"))
+
     text = messages.review_task_card(task, responses=pending)
     photo_url = _get_first_proof_url(task, pending)
 

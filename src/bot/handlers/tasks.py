@@ -21,6 +21,7 @@ from aiogram.types import (
 from ...api.client import TaskMateAPI
 from ...storage.sessions import UserSession
 from .. import keyboards, messages
+from ...utils.tz_utils import attach_dealership_timezone
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -118,6 +119,12 @@ async def cmd_tasks(message: Message, session: UserSession, **kwargs) -> None:
     if not tasks:
         await message.answer("📋 У вас нет активных задач.", reply_markup=kb)
         return
+    # Ensure tasks have dealership.timezone attached for proper local formatting
+    if tasks:
+        try:
+            await asyncio.gather(*(attach_dealership_timezone(api, t) for t in tasks))
+        except Exception:
+            logger.debug("Не удалось прикрепить timezone для списка задач")
 
     await message.answer(f"📋 <b>Задачи на сегодня ({len(tasks)})</b>", reply_markup=kb)
     for t in tasks:
@@ -161,6 +168,10 @@ async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )
+    try:
+        await attach_dealership_timezone(api, task)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для задачи %s", task.get("id"))
     await message.answer(messages.task_detail(task), reply_markup=kb or reply_kb)
 
     dlg_kb = await _build_delegation_kb(api, task, session)
@@ -187,6 +198,10 @@ async def cb_task_detail(callback: CallbackQuery, session: UserSession) -> None:
     kb = keyboards.task_actions(
         task["id"], task.get("response_type", ""), task.get("status", "")
     )
+    try:
+        await attach_dealership_timezone(api, task)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для задачи %s (callback)", task.get("id"))
     await callback.message.answer(messages.task_detail(task), reply_markup=kb)
 
     dlg_kb = await _build_delegation_kb(api, task, session)

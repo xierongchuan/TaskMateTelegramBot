@@ -12,6 +12,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup
 from ...api.client import TaskMateAPI
 from ...storage.notifications import clear_notified
 from ...storage.sessions import UserSession, delete_session, get_session
+from ...utils.tz_utils import attach_dealership_timezone
 from .. import keyboards, messages
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,12 @@ async def btn_tasks(message: Message, session: UserSession, **kwargs) -> None:
     if not tasks:
         await message.answer("📋 У вас нет активных задач.", reply_markup=kb)
         return
+    # Ensure tasks have dealership.timezone attached for proper local formatting
+    if tasks:
+        try:
+            await asyncio.gather(*(attach_dealership_timezone(api, t) for t in tasks))
+        except Exception:
+            logger.debug("Не удалось прикрепить timezone для списка задач (menu)")
 
     await message.answer(f"📋 <b>Задачи на сегодня ({len(tasks)})</b>", reply_markup=kb)
     for t in tasks:
@@ -85,6 +92,12 @@ async def btn_my_shift(message: Message, session: UserSession, **kwargs) -> None
             await message.answer(messages.no_current_shift(), reply_markup=kb)
         return
 
+    # Ensure timezone attached for correct local display
+    try:
+        await attach_dealership_timezone(api, shift)
+    except Exception:
+        logger.debug("Не удалось прикрепить timezone для текущей смены %s", shift.get("id"))
+
     if is_employee and shift.get("status") in ("open", "late"):
         await message.answer(
             messages.shift_info_with_action(shift),
@@ -114,6 +127,11 @@ async def btn_shifts(message: Message, session: UserSession, **kwargs) -> None:
             return
 
         shifts = result.get("data", [])
+        if shifts:
+            try:
+                await asyncio.gather(*(attach_dealership_timezone(api, s) for s in shifts))
+            except Exception:
+                logger.debug("Не удалось прикрепить timezone для списка смен (menu)")
         await message.answer(messages.shift_list(shifts), reply_markup=kb)
 
 
@@ -132,6 +150,14 @@ async def btn_dashboard(message: Message, session: UserSession, **kwargs) -> Non
         return
 
     data = result.get("data", result)
+    # Ensure tasks in dashboard have dealership.timezone attached (cached) so
+    # messages.dashboard_summary formats deadlines in local TZ instead of UTC.
+    overdue = data.get("overdue_tasks_list", [])
+    if overdue:
+        try:
+            await asyncio.gather(*(attach_dealership_timezone(api, t) for t in overdue))
+        except Exception:
+            logger.debug("Не удалось прикрепить timezone для задач дашборда")
     await message.answer(
         messages.dashboard_summary(data, role=session.role), reply_markup=kb
     )
@@ -160,6 +186,11 @@ async def btn_overdue(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     tasks = result.get("data", [])
+    if tasks:
+        try:
+            await asyncio.gather(*(attach_dealership_timezone(api, t) for t in tasks))
+        except Exception:
+            logger.debug("Не удалось прикрепить timezone для просроченных задач (menu)")
     await message.answer(messages.overdue_task_list(tasks), reply_markup=kb)
 
 

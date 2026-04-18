@@ -13,6 +13,7 @@ from ..bot import keyboards, messages
 from ..config import settings
 from ..storage.notifications import add_notified, is_notified
 from ..storage.sessions import UserSession, get_all_sessions
+from ..utils.tz_utils import attach_dealership_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,14 @@ async def _handle_message(bot: Bot, body: bytes) -> None:
 
         if await is_notified(chat_id, category, dedup_key):
             continue
+
+        # Ensure task has dealership.timezone for correct local formatting
+        session = sessions.get(chat_id)
+        api = TaskMateAPI(token=session.token) if session else TaskMateAPI(token=None)
+        try:
+            await attach_dealership_timezone(api, task)
+        except Exception:
+            logger.debug("Не удалось прикрепить timezone для RabbitMQ-уведомления task=%s", task_id)
 
         text = _format_message(event, task, payload)
         if not text:

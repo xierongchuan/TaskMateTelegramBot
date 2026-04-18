@@ -12,6 +12,7 @@ from ..api.client import TaskMateAPI
 from ..bot import messages
 from ..storage.notifications import add_notified, is_notified
 from ..storage.sessions import get_all_sessions
+from ..utils.tz_utils import attach_dealership_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,13 @@ async def check_deadlines(bot: Bot) -> None:
                 if 0 < diff <= 1800:  # 30 минут
                     await add_notified(chat_id, "deadlines", task_id)
                     minutes = int(diff / 60)
+                    try:
+                        await attach_dealership_timezone(api, task)
+                    except Exception:
+                        logger.debug(
+                            "Не удалось прикрепить timezone для уведомления дедлайна task=%s",
+                            task_id,
+                        )
                     await bot.send_message(
                         chat_id,
                         messages.notification_deadline_soon(task, minutes),
@@ -53,6 +61,13 @@ async def check_deadlines(bot: Bot) -> None:
                 elif diff <= 0 and status in ("pending", "acknowledged"):
                     if not await is_notified(chat_id, "overdue", task_id):
                         await add_notified(chat_id, "overdue", task_id)
+                        try:
+                            await attach_dealership_timezone(api, task)
+                        except Exception:
+                            logger.debug(
+                                "Не удалось прикрепить timezone для уведомления просрочки task=%s",
+                                task_id,
+                            )
                         await bot.send_message(
                             chat_id,
                             messages.notification_overdue(task),
