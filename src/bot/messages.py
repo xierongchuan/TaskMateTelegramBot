@@ -325,11 +325,29 @@ def dashboard_summary(d: dict[str, Any], role: str = "") -> str:
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━━━")
         lines.append("🏢 <b>Автосалоны</b>\n")
+        active_shifts = d.get("active_shifts", []) or []
         for ds in dealer_stats[:5]:
-            name = ds.get("name", "—")
-            total = ds.get("total_shifts", 0)
-            on_time = ds.get("on_time", 0)
-            late = ds.get("late", 0)
+            # Поддерживаем несколько форматов ответа API
+            dealership_id = ds.get("dealership_id") or ds.get("id") or (ds.get("dealership") or {}).get("id")
+            name = ds.get("dealership_name") or ds.get("name") or (ds.get("dealership") or {}).get("name") or "—"
+
+            # Собираем активные смены для данного автосалона
+            shifts_for_ds = [
+                s for s in active_shifts
+                if (s.get("dealership") or {}).get("id") == dealership_id
+            ]
+
+            # total: используем on_shift_count если он есть, иначе падаем на длину списка активных смен
+            total = ds.get("on_shift_count")
+            if total is None:
+                total = ds.get("total_shifts")
+            if total is None:
+                total = len(shifts_for_ds)
+
+            # Опоздания: считаем по status=='late' или по флагу is_late
+            late = sum(1 for s in shifts_for_ds if s.get("status") == "late" or s.get("is_late") is True)
+            on_time = max(0, int(total) - late)
+
             lines.append(f"  <b>{name}</b>: {total} смен ({on_time} вовремя, {late} опозд.)")
 
     return "\n".join(lines)

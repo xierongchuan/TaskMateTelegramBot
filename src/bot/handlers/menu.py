@@ -29,8 +29,17 @@ async def btn_tasks(message: Message, session: UserSession, **kwargs) -> None:
     """Список задач за сегодня."""
     kb = _kb(kwargs)
     api = TaskMateAPI(token=session.token)
+    # Build params based on which button was pressed and the user's role:
+    # - If user pressed `BTN_MY_TASKS` or is an employee -> show only assigned tasks
+    # - If user pressed `BTN_TASKS` and is manager -> show tasks for manager's dealerships
+    # - If user pressed `BTN_TASKS` and is owner -> show all tasks in system
+    params: dict = {"date_range": "today", "per_page": 20}
+    text = (message.text or "").strip()
+    if text == keyboards.BTN_MY_TASKS or session.role == "employee":
+        params["assigned_to"] = session.user_id
+
     try:
-        result = await api.get_tasks({"date_range": "today", "per_page": 20})
+        result = await api.get_tasks(params)
     except httpx.HTTPStatusError:
         raise
     except Exception:
