@@ -329,13 +329,19 @@ def dashboard_summary(d: dict[str, Any], role: str = "") -> str:
         for ds in dealer_stats[:5]:
             # Поддерживаем несколько форматов ответа API
             dealership_id = ds.get("dealership_id") or ds.get("id") or (ds.get("dealership") or {}).get("id")
-            name = ds.get("dealership_name") or ds.get("name") or (ds.get("dealership") or {}).get("name") or "—"
 
             # Собираем активные смены для данного автосалона
             shifts_for_ds = [
                 s for s in active_shifts
                 if (s.get("dealership") or {}).get("id") == dealership_id
             ]
+
+            # name: берем из разных полей, иначе — из первой активной смены, иначе placeholder
+            name = ds.get("dealership_name") or ds.get("name") or (ds.get("dealership") or {}).get("name")
+            if not name and shifts_for_ds:
+                name = (shifts_for_ds[0].get("dealership") or {}).get("name")
+            if not name:
+                name = "—"
 
             # total: используем on_shift_count если он есть, иначе падаем на длину списка активных смен
             total = ds.get("on_shift_count")
