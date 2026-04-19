@@ -48,6 +48,19 @@ async def btn_tasks(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     tasks = result.get("data", [])
+    # Для менеджеров/владельцев при просмотре общего списка задач
+    # исключаем задачи со статусом `pending_review`, т.к. для них
+    # есть отдельная кнопка "На проверку".
+    text = (message.text or "").strip()
+    if text == keyboards.BTN_TASKS and session.role in ("manager", "owner") and tasks:
+        original_count = len(tasks)
+        tasks = [t for t in tasks if t.get("status") != "pending_review"]
+        logger.info(
+            "btn_tasks: role=%s — filtered out %d tasks with status=pending_review",
+            session.role,
+            original_count - len(tasks),
+        )
+
     if not tasks:
         await message.answer("📋 У вас нет активных задач.", reply_markup=kb)
         return

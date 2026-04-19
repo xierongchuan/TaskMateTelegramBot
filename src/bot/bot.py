@@ -9,11 +9,12 @@ import httpx
 from aiogram import BaseMiddleware, Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from ..config import settings
 from ..storage.notifications import clear_notified
-from ..storage.sessions import delete_session, get_session, refresh_session_ttl
+from ..storage.sessions import delete_session, get_fsm_redis, get_session, refresh_session_ttl
 from . import keyboards
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,16 @@ bot = Bot(
     token=settings.telegram_bot_token,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
-dp = Dispatcher()
+
+
+async def create_dispatcher() -> Dispatcher:
+    """Создать Dispatcher с Redis хранилищем."""
+    redis_client = await get_fsm_redis()
+    storage = RedisStorage(redis_client)
+    return Dispatcher(storage=storage)
+
+
+
 
 
 class AuthMiddleware(BaseMiddleware):

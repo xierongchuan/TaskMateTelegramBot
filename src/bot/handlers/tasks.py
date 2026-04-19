@@ -29,6 +29,9 @@ router = Router()
 MAX_PROOF_FILES = 5
 MAX_PROOF_TOTAL_BYTES = 50 * 1024 * 1024  # 50 MB
 
+# Temporary storage for file contents (keyed by (chat_id, task_id))
+_temp_file_storage: dict[tuple[int, int], list[dict[str, Any]]] = {}
+
 # Статусы, при которых делегирование недоступно
 _NO_DELEGATION_STATUSES = {"completed", "completed_late", "pending_review"}
 
@@ -116,6 +119,16 @@ async def cmd_tasks(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     tasks = result.get("data", [])
+    # For managers/owners exclude tasks that are currently "на проверке"
+    # (status == "pending_review") so they don't see review-only items
+    if getattr(session, "role", None) in ("manager", "owner") and tasks:
+        original_count = len(tasks)
+        tasks = [t for t in tasks if t.get("status") != "pending_review"]
+        logger.info(
+            "cmd_tasks: role=%s — filtered out %d tasks with status=pending_review",
+            session.role,
+            original_count - len(tasks),
+        )
     if not tasks:
         await message.answer("📋 У вас нет активных задач.", reply_markup=kb)
         return
@@ -165,9 +178,23 @@ async def cmd_task(message: Message, session: UserSession, **kwargs) -> None:
         return
 
     task = result.get("data", result)
-    kb = keyboards.task_actions(
-        task["id"], task.get("response_type", ""), task.get("status", "")
-    )
+    try:
+        logger.info(
+            "cmd_task: building keyboard for task=%s user=%s role=%s assignments=%s response_type=%s status=%s",
+            task.get("id"),
+            session.user_id,
+            session.role,
+            len(task.get("assignments", [])),
+            task.get("response_type"),
+            task.get("status"),
+        )
+    except Exception:
+        logger.debug("cmd_task: failed to log task/session info")
+    try:
+        kb = keyboards.task_actions(task, session)
+    except Exception:
+        logger.exception("cmd_task: task_actions raised")
+        kb = None
     try:
         await attach_dealership_timezone(api, task)
     except Exception:
@@ -195,9 +222,23 @@ async def cb_task_detail(callback: CallbackQuery, session: UserSession) -> None:
         return
 
     task = result.get("data", result)
-    kb = keyboards.task_actions(
-        task["id"], task.get("response_type", ""), task.get("status", "")
-    )
+    try:
+        logger.info(
+            "cb_task_detail: building keyboard for task=%s user=%s role=%s assignments=%s response_type=%s status=%s",
+            task.get("id"),
+            getattr(session, "user_id", None),
+            getattr(session, "role", None),
+            len(task.get("assignments", [])),
+            task.get("response_type"),
+            task.get("status"),
+        )
+    except Exception:
+        logger.debug("cb_task_detail: failed to log task/session info")
+    try:
+        kb = keyboards.task_actions(task, session)
+    except Exception:
+        logger.exception("cb_task_detail: task_actions raised")
+        kb = None
     try:
         await attach_dealership_timezone(api, task)
     except Exception:
@@ -281,8 +322,13 @@ async def cb_proof_start(
 ) -> None:
     """Начать загрузку доказательств."""
     task_id = int(callback.data.split(":")[1])
+    chat_id = callback.message.chat.id
+    logger.info("cb_proof_start: Setting state to ProofUpload.collecting for task %s", task_id)
     await state.set_state(ProofUpload.collecting)
     await state.update_data(task_id=task_id, files=[], total_bytes=0)
+    # Initialize temp storage
+    _temp_file_storage[(chat_id, task_id)] = []
+    logger.info("cb_proof_start: State and temp storage set successfully")
     kb = keyboards.proof_actions(task_id)
     await callback.message.answer(messages.proof_upload_prompt(), reply_markup=kb)
     await callback.answer()
@@ -291,12 +337,16 @@ async def cb_proof_start(
 @router.message(ProofUpload.collecting, F.photo)
 async def on_proof_photo(message: Message, state: FSMContext) -> None:
     """Получить фото как доказательство."""
+    logger.info("on_proof_photo: Handler triggered for message %s", message.message_id)
     data = await state.get_data()
-    files: list[dict[str, Any]] = data.get("files", [])
+    task_id = data["task_id"]
+    chat_id = message.chat.id
+    logger.info("on_proof_photo: State data retrieved: files=%d, total_bytes=%d", len(data.get("files", [])), data.get("total_bytes", 0))
+    files_meta: list[dict[str, Any]] = data.get("files", [])
     total_bytes: int = data.get("total_bytes", 0)
 
-    if len(files) >= MAX_PROOF_FILES:
-        kb = keyboards.proof_actions(data["task_id"])
+    if len(files_meta) >= MAX_PROOF_FILES:
+        kb = keyboards.proof_actions(task_id)
         await message.answer(
             f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».",
             reply_markup=kb,
@@ -304,37 +354,65 @@ async def on_proof_photo(message: Message, state: FSMContext) -> None:
         return
 
     photo = message.photo[-1]  # наибольший размер
-    file = await message.bot.get_file(photo.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-    content = file_bytes.read()
+    logger.info("on_proof_photo: Starting file download for photo %s", photo.file_id)
+    try:
+        logger.info("on_proof_photo: Calling get_file")
+        file = await message.bot.get_file(photo.file_id)
+        logger.info("on_proof_photo: get_file completed, file_path=%s", file.file_path)
+        logger.info("on_proof_photo: Calling download_file")
+        file_bytes = await message.bot.download_file(file.file_path)
+        logger.info("on_proof_photo: download_file completed, reading content")
+        content = file_bytes.read()
+        logger.info("on_proof_photo: Content read, size=%d bytes", len(content))
+    except Exception as e:
+        logger.exception("Ошибка загрузки фото")
+        kb = keyboards.proof_actions(task_id)
+        await message.answer("❌ Ошибка загрузки фото. Попробуйте ещё раз.", reply_markup=kb)
+        return
 
     if total_bytes + len(content) > MAX_PROOF_TOTAL_BYTES:
-        kb = keyboards.proof_actions(data["task_id"])
+        kb = keyboards.proof_actions(task_id)
         await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
         return
 
-    files.append(
+    # Store full file in temp storage
+    file_dict = {
+        "name": f"photo_{len(files_meta) + 1}.jpg",
+        "content": content,
+        "mime": "image/jpeg",
+    }
+    _temp_file_storage[(chat_id, task_id)].append(file_dict)
+
+    # Store metadata in state
+    files_meta.append(
         {
-            "name": f"photo_{len(files) + 1}.jpg",
-            "content": content,
+            "name": file_dict["name"],
+            "size": len(content),
             "mime": "image/jpeg",
         }
     )
-    await state.update_data(files=files, total_bytes=total_bytes + len(content))
+    logger.info("on_proof_photo: Appended file to list, now %d files", len(files_meta))
+    logger.info("on_proof_photo: Calling state.update_data")
+    await state.update_data(files=files_meta, total_bytes=total_bytes + len(content))
+    logger.info("on_proof_photo: State updated successfully")
 
-    kb = keyboards.proof_actions(data["task_id"])
-    await message.answer(messages.proof_received(len(files)), reply_markup=kb)
+    kb = keyboards.proof_actions(task_id)
+    logger.info("on_proof_photo: Sending confirmation message")
+    await message.answer(messages.proof_received(len(files_meta)), reply_markup=kb)
+    logger.info("on_proof_photo: Handler completed successfully")
 
 
 @router.message(ProofUpload.collecting, F.document)
 async def on_proof_document(message: Message, state: FSMContext) -> None:
     """Получить документ как доказательство."""
     data = await state.get_data()
-    files: list[dict[str, Any]] = data.get("files", [])
+    task_id = data["task_id"]
+    chat_id = message.chat.id
+    files_meta: list[dict[str, Any]] = data.get("files", [])
     total_bytes: int = data.get("total_bytes", 0)
 
-    if len(files) >= MAX_PROOF_FILES:
-        kb = keyboards.proof_actions(data["task_id"])
+    if len(files_meta) >= MAX_PROOF_FILES:
+        kb = keyboards.proof_actions(task_id)
         await message.answer(
             f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».",
             reply_markup=kb,
@@ -342,37 +420,54 @@ async def on_proof_document(message: Message, state: FSMContext) -> None:
         return
 
     doc = message.document
-    file = await message.bot.get_file(doc.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-    content = file_bytes.read()
+    try:
+        file = await message.bot.get_file(doc.file_id)
+        file_bytes = await message.bot.download_file(file.file_path)
+        content = file_bytes.read()
+    except Exception as e:
+        logger.exception("Ошибка загрузки документа")
+        kb = keyboards.proof_actions(task_id)
+        await message.answer("❌ Ошибка загрузки документа. Попробуйте ещё раз.", reply_markup=kb)
+        return
 
     if total_bytes + len(content) > MAX_PROOF_TOTAL_BYTES:
-        kb = keyboards.proof_actions(data["task_id"])
+        kb = keyboards.proof_actions(task_id)
         await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
         return
 
-    files.append(
+    # Store full file in temp storage
+    file_dict = {
+        "name": doc.file_name or f"file_{len(files_meta) + 1}",
+        "content": content,
+        "mime": doc.mime_type or "application/octet-stream",
+    }
+    _temp_file_storage[(chat_id, task_id)].append(file_dict)
+
+    # Store metadata in state
+    files_meta.append(
         {
-            "name": doc.file_name or f"file_{len(files) + 1}",
-            "content": content,
-            "mime": doc.mime_type or "application/octet-stream",
+            "name": file_dict["name"],
+            "size": len(content),
+            "mime": file_dict["mime"],
         }
     )
-    await state.update_data(files=files, total_bytes=total_bytes + len(content))
+    await state.update_data(files=files_meta, total_bytes=total_bytes + len(content))
 
-    kb = keyboards.proof_actions(data["task_id"])
-    await message.answer(messages.proof_received(len(files)), reply_markup=kb)
+    kb = keyboards.proof_actions(task_id)
+    await message.answer(messages.proof_received(len(files_meta)), reply_markup=kb)
 
 
 @router.message(ProofUpload.collecting, F.video)
 async def on_proof_video(message: Message, state: FSMContext) -> None:
     """Получить видео как доказательство."""
     data = await state.get_data()
-    files: list[dict[str, Any]] = data.get("files", [])
+    task_id = data["task_id"]
+    chat_id = message.chat.id
+    files_meta: list[dict[str, Any]] = data.get("files", [])
     total_bytes: int = data.get("total_bytes", 0)
 
-    if len(files) >= MAX_PROOF_FILES:
-        kb = keyboards.proof_actions(data["task_id"])
+    if len(files_meta) >= MAX_PROOF_FILES:
+        kb = keyboards.proof_actions(task_id)
         await message.answer(
             f"Максимум файлов: {MAX_PROOF_FILES}. Нажмите «📤 Отправить на проверку».",
             reply_markup=kb,
@@ -380,26 +475,41 @@ async def on_proof_video(message: Message, state: FSMContext) -> None:
         return
 
     video = message.video
-    file = await message.bot.get_file(video.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-    content = file_bytes.read()
+    try:
+        file = await message.bot.get_file(video.file_id)
+        file_bytes = await message.bot.download_file(file.file_path)
+        content = file_bytes.read()
+    except Exception as e:
+        logger.exception("Ошибка загрузки видео")
+        kb = keyboards.proof_actions(task_id)
+        await message.answer("❌ Ошибка загрузки видео. Попробуйте ещё раз.", reply_markup=kb)
+        return
 
     if total_bytes + len(content) > MAX_PROOF_TOTAL_BYTES:
-        kb = keyboards.proof_actions(data["task_id"])
+        kb = keyboards.proof_actions(task_id)
         await message.answer("Превышен лимит размера файлов (50 МБ).", reply_markup=kb)
         return
 
-    files.append(
+    # Store full file in temp storage
+    file_dict = {
+        "name": video.file_name or f"video_{len(files_meta) + 1}.mp4",
+        "content": content,
+        "mime": video.mime_type or "video/mp4",
+    }
+    _temp_file_storage[(chat_id, task_id)].append(file_dict)
+
+    # Store metadata in state
+    files_meta.append(
         {
-            "name": video.file_name or f"video_{len(files) + 1}.mp4",
-            "content": content,
-            "mime": video.mime_type or "video/mp4",
+            "name": file_dict["name"],
+            "size": len(content),
+            "mime": file_dict["mime"],
         }
     )
-    await state.update_data(files=files, total_bytes=total_bytes + len(content))
+    await state.update_data(files=files_meta, total_bytes=total_bytes + len(content))
 
-    kb = keyboards.proof_actions(data["task_id"])
-    await message.answer(messages.proof_received(len(files)), reply_markup=kb)
+    kb = keyboards.proof_actions(task_id)
+    await message.answer(messages.proof_received(len(files_meta)), reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("proof_submit:"))
@@ -409,21 +519,38 @@ async def cb_proof_submit(
     """Отправить доказательства на проверку."""
     data = await state.get_data()
     task_id = data.get("task_id")
-    files: list[dict[str, Any]] = data.get("files", [])
+    chat_id = callback.message.chat.id
+    files_meta: list[dict[str, Any]] = data.get("files", [])
 
-    if not files:
+    logger.info("cb_proof_submit: Submitting proof for task %s, meta files=%d", task_id, len(files_meta))
+
+    if not files_meta:
         await callback.answer("Нет загруженных файлов", show_alert=True)
         return
 
+    # Get files from temp storage
+    files = _temp_file_storage.get((chat_id, task_id), [])
+    if not files:
+        logger.error("cb_proof_submit: No files in temp storage for chat_id=%s task_id=%s", chat_id, task_id)
+        await callback.answer("Ошибка: файлы не найдены", show_alert=True)
+        return
+
+    logger.info("cb_proof_submit: Found %d files in temp storage", len(files))
     proof_files = [(f["name"], f["content"], f["mime"]) for f in files]
+    logger.info("cb_proof_submit: Prepared proof_files with %d items", len(proof_files))
 
     api = TaskMateAPI(token=session.token)
     try:
+        logger.info("cb_proof_submit: Calling API update_task_status")
         await api.update_task_status(task_id, "pending_review", proof_files=proof_files)
+        logger.info("cb_proof_submit: API call successful")
     except Exception:
         logger.exception("Ошибка отправки доказательств")
         await callback.answer("Ошибка отправки", show_alert=True)
         return
+
+    # Clean up temp storage
+    _temp_file_storage.pop((chat_id, task_id), None)
 
     await state.clear()
     try:
@@ -437,6 +564,13 @@ async def cb_proof_submit(
 @router.callback_query(F.data.startswith("proof_cancel:"))
 async def cb_proof_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Отменить загрузку доказательств."""
+    data = await state.get_data()
+    task_id = data.get("task_id")
+    chat_id = callback.message.chat.id
+
+    # Clean up temp storage
+    _temp_file_storage.pop((chat_id, task_id), None)
+
     await state.clear()
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -453,7 +587,8 @@ async def cb_proof_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 async def on_proof_unexpected(message: Message, state: FSMContext) -> None:
     """Обработать неожиданное сообщение во время загрузки доказательств."""
     data = await state.get_data()
-    kb = keyboards.proof_actions(data["task_id"])
+    task_id = data["task_id"]
+    kb = keyboards.proof_actions(task_id)
     await message.answer(
         "Отправьте фото, видео или документ. Текстовые сообщения не принимаются.",
         reply_markup=kb,

@@ -41,6 +41,21 @@ async def get_redis() -> redis.Redis:
     return _pool
 
 
+_fsm_pool: redis.Redis | None = None
+
+
+async def get_fsm_redis() -> redis.Redis:
+    """Получить подключение к Valkey для FSM."""
+    global _fsm_pool
+    if _fsm_pool is None:
+        _fsm_pool = redis.Redis(
+            host=settings.valkey_host,
+            port=settings.valkey_port,
+            db=settings.valkey_fsm_db,
+        )
+    return _fsm_pool
+
+
 async def save_session(chat_id: int, session: UserSession) -> None:
     """Сохранить сессию для chat_id."""
     r = await get_redis()
@@ -96,8 +111,11 @@ async def get_all_sessions() -> dict[int, UserSession]:
 
 
 async def close() -> None:
-    """Закрыть подключение."""
-    global _pool
+    """Закрыть подключения."""
+    global _pool, _fsm_pool
     if _pool is not None:
         await _pool.aclose()
         _pool = None
+    if _fsm_pool is not None:
+        await _fsm_pool.aclose()
+        _fsm_pool = None

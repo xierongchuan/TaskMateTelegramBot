@@ -9,6 +9,12 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
+from typing import Any
+import logging
+
+from ..storage.sessions import UserSession
+
+logger = logging.getLogger(__name__)
 
 # --- Тексты кнопок меню ---
 
@@ -48,18 +54,77 @@ def remove_menu() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
 
 
-def task_actions(task_id: int, response_type: str, status: str) -> InlineKeyboardMarkup | None:
-    """Кнопки действий для задачи в зависимости от типа и статуса."""
+def task_actions(task: dict[str, Any], session: UserSession | None) -> InlineKeyboardMarkup | None:
+    """Кнопки действий для задачи в зависимости от типа, статуса и прав сессии.
+
+    - `session` может быть None (например, в уведомлениях), в этом случае
+      кнопки не показываются, чтобы не выдавать действия неизвестным сессиям.
+    - Managers/Owners могут выполнять/загружать доказательства для любых задач.
+    - Employees могут действовать только на задачах, где они назначены.
+    """
     buttons: list[list[InlineKeyboardButton]] = []
 
-    if status in ("completed", "completed_late"):
+    if not session:
+        logger.info(
+            "task_actions: no session for task %s — hiding actions",
+            task.get("id"),
+        )
         return None
+
+    status = task.get("status", "")
+    if status in ("completed", "completed_late"):
+        logger.info(
+            "task_actions: task %s status=%s — hiding actions",
+            task.get("id"),
+            status,
+        )
+        return None
+
+    # Role-based access: observers cannot act
+    if session.role == "observer":
+        logger.info(
+            "task_actions: session %s role=observer — hiding actions for task %s",
+            getattr(session, "user_id", None),
+            task.get("id"),
+        )
+        return None
+
+    # Determine if user is assigned (employees must be assigned)
+    assigned = False
+    for a in task.get("assignments", []):
+        uid = a.get("user_id") or a.get("user", {}).get("id")
+        if uid is None:
+            continue
+        try:
+            if str(uid) == str(session.user_id):
+                assigned = True
+                break
+        except Exception:
+            continue
+
+    logger.info(
+        "task_actions: task=%s status=%s response_type=%s assignments=%s assigned=%s session_role=%s session_user=%s",
+        task.get("id"),
+        status,
+        response_type := task.get("response_type", ""),
+        len(task.get("assignments", [])),
+        assigned,
+        session.role,
+        session.user_id,
+    )
+
+    # Managers/owners can act even if not assigned
+    is_manager_like = session.role in ("manager", "owner")
+    if session.role == "employee" and not (assigned or is_manager_like):
+        return None
+
+    response_type = task.get("response_type", "")
 
     if response_type == "notification" and status == "pending":
         buttons.append([
             InlineKeyboardButton(
                 text="👁 Ознакомлен",
-                callback_data=f"ack:{task_id}",
+                callback_data=f"ack:{task['id']}",
             )
         ])
 
@@ -67,22 +132,30 @@ def task_actions(task_id: int, response_type: str, status: str) -> InlineKeyboar
         buttons.append([
             InlineKeyboardButton(
                 text="✅ Выполнено",
-                callback_data=f"complete_confirm:{task_id}",
+                callback_data=f"complete_confirm:{task['id']}",
             ),
         ])
 
     elif response_type == "completion_with_proof":
-        if status in ("pending", "acknowledged", "rejected"):
+        # Allow upload for normal employee-allowed statuses. Additionally,
+        # permit manager/owner to start proof upload for tasks in
+        # `pending_review` (they may need to add/attach proofs).
+        if status in ("pending", "acknowledged", "rejected") or (
+            is_manager_like and status == "pending_review"
+        ):
             buttons.append([
                 InlineKeyboardButton(
                     text="📎 Загрузить доказательства",
-                    callback_data=f"proof_start:{task_id}",
+                    callback_data=f"proof_start:{task['id']}",
                 ),
             ])
 
     if not buttons:
+        logger.info("task_actions: no buttons built for task %s", task.get("id"))
         return None
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    logger.info("task_actions: returning keyboard for task %s", task.get("id"))
+    return kb
 
 
 def complete_confirmation(task_id: int) -> InlineKeyboardMarkup:

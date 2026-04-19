@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     valkey_host: str = "valkey"
     valkey_port: int = 6379
     valkey_db: int = 1
+    valkey_fsm_db: int = 2
 
     rabbitmq_host: str = "rabbitmq"
     rabbitmq_port: int = 5672

@@ -9,7 +9,7 @@ from apscheduler import AsyncScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from src.api.client import close_http_client
-from src.bot.bot import AuthMiddleware, ReplyKeyboardMiddleware, bot, dp
+from src.bot.bot import AuthMiddleware, ReplyKeyboardMiddleware, bot, create_dispatcher
 from src.bot.handlers import auth, common, delegations, menu, review, shifts, tasks
 from src.config import settings
 from src.scheduler.polling import check_deadlines
@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     logger.info("Запуск TaskMateBot...")
+
+    # Создание диспетчера с Redis хранилищем
+    dp = await create_dispatcher()
 
     # Регистрация роутеров (common без auth middleware, остальные с ним)
     dp.include_router(common.router)

@@ -116,9 +116,13 @@ async def _handle_message(bot: Bot, body: bytes) -> None:
         try:
             kwargs: dict = {}
             if event == "task.assigned":
-                kwargs["reply_markup"] = keyboards.task_actions(
-                    task_id, task.get("response_type", ""), "pending"
-                )
+                # If payload doesn't include assignments, assume the notification
+                # is targeted to this user (user_id) and add a fallback assignment
+                local_task = dict(task) if isinstance(task, dict) else task
+                if not local_task.get("assignments"):
+                    local_task = dict(local_task)
+                    local_task["assignments"] = [{"user_id": user_id}]
+                kwargs["reply_markup"] = keyboards.task_actions(local_task, session)
             elif event == "task.pending_review":
                 response_id = payload.get("response_id")
                 if response_id:
