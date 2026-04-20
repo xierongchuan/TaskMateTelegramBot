@@ -9,6 +9,7 @@ import time
 import aio_pika
 from aiogram import Bot
 
+from ..api.client import TaskMateAPI
 from ..bot import keyboards, messages
 from ..config import settings
 from ..storage.notifications import add_notified, is_notified
