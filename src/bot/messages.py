@@ -624,14 +624,33 @@ def delegation_requested_notification(
     task: dict[str, Any], from_user: str, reason: str = "",
 ) -> str:
     """Уведомление: входящий запрос на делегирование (RabbitMQ)."""
+    task_id = task.get("id", "?")
+    task_title = task.get("title", "—")
+    task_desc = task.get("description", "")
+    deadline = task.get("deadline")
+    priority = task.get("priority", "medium")
+    priority_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "⚪")
+
     lines = [
         f"🔄 <b>Запрос на делегирование</b>",
         "",
-        f"Задача: <b>#{task.get('id', '?')}</b> {task.get('title', '')}",
-        f"От: {from_user}",
+        f"{priority_icon} <b>Задача #{task_id}</b>: {task_title}",
     ]
+
+    if task_desc:
+        desc_preview = task_desc[:100] + "..." if len(task_desc) > 100 else task_desc
+        lines.append(f"<i>{desc_preview}</i>")
+
+    if deadline:
+        tz = _get_tz(task)
+        dl = _format_deadline(deadline, tz)
+        lines.append(f"📅 Дедлайн: {dl}")
+
+    lines.append(f"👤 От: {from_user}")
+
     if reason:
-        lines.append(f"Причина: {reason}")
+        lines.append(f"💬 Причина: {reason}")
+
     lines.append("\nПримите или отклоните запрос.")
     return "\n".join(lines)
 
@@ -640,25 +659,50 @@ def delegation_accepted_notification(
     task: dict[str, Any], to_user: str,
 ) -> str:
     """Уведомление: делегирование принято."""
-    return (
-        f"✅ <b>Делегирование принято</b>\n\n"
-        f"Задача: <b>#{task.get('id', '?')}</b> {task.get('title', '')}\n"
-        f"Принял: {to_user}"
-    )
+    task_id = task.get("id", "?")
+    task_title = task.get("title", "—")
+    task_desc = task.get("description", "")
+    deadline = task.get("deadline")
+    priority = task.get("priority", "medium")
+    priority_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "⚪")
+
+    lines = [
+        f"✅ <b>Делегирование принято</b>",
+        "",
+        f"{priority_icon} <b>Задача #{task_id}</b>: {task_title}",
+    ]
+
+    if task_desc:
+        desc_preview = task_desc[:80] + "..." if len(task_desc) > 80 else task_desc
+        lines.append(f"<i>{desc_preview}</i>")
+
+    if deadline:
+        tz = _get_tz(task)
+        dl = _format_deadline(deadline, tz)
+        lines.append(f"📅 Дедлайн: {dl}")
+
+    lines.append(f"👤 Принял: {to_user}")
+    return "\n".join(lines)
 
 
 def delegation_rejected_notification(
     task: dict[str, Any], to_user: str, reason: str = "",
 ) -> str:
     """Уведомление: делегирование отклонено."""
-    msg = (
-        f"❌ <b>Делегирование отклонено</b>\n\n"
-        f"Задача: <b>#{task.get('id', '?')}</b> {task.get('title', '')}\n"
-        f"Отклонил: {to_user}"
-    )
+    task_id = task.get("id", "?")
+    task_title = task.get("title", "—")
+    priority = task.get("priority", "medium")
+    priority_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "⚪")
+
+    lines = [
+        f"❌ <b>Делегирование отклонено</b>",
+        "",
+        f"{priority_icon} <b>Задача #{task_id}</b>: {task_title}",
+        f"👤 Отклонил: {to_user}",
+    ]
     if reason:
-        msg += f"\nПричина: {reason}"
-    return msg
+        lines.append(f"💬 Причина: {reason}")
+    return "\n".join(lines)
 
 
 def delegation_created_success(task_id: int, to_user_name: str) -> str:
@@ -719,10 +763,29 @@ def delegation_list(
             "cancelled": "🚫",
         }
         icon = status_icons.get(status, "⚪")
+
+        task_title = task.get("title", "—")
+        task_desc = task.get("description", "")
+        deadline = task.get("deadline")
+        priority = task.get("priority", "medium")
+        priority_icon = _priority_icon(priority)
+
         lines.append(
-            f"{icon} <b>#{dlg_id}</b> Задача #{task.get('id', '?')}: {task.get('title', '')}"
-            f"\n   {from_u} → {to_u}"
+            f"{icon} <b>#{dlg_id}</b> Задача #{task.get('id', '?')}\n"
+            f"{priority_icon} {task_title}"
         )
+
+        if task_desc:
+            desc_preview = task_desc[:100] + "..." if len(task_desc) > 100 else task_desc
+            lines.append(f"   <i>{desc_preview}</i>")
+
+        if deadline:
+            tz = _get_tz(task)
+            dl = _format_deadline(deadline, tz)
+            lines.append(f"   📅 Дедлайн: {dl}")
+
+        lines.append(f"   {from_u} → {to_u}")
+
     return "\n".join(lines)
 
 

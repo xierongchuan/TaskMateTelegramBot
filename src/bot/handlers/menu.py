@@ -232,6 +232,54 @@ async def btn_logout(message: Message, **kwargs) -> None:
 
     await clear_notified(message.chat.id)
     await delete_session(message.chat.id)
+
+
+@router.message(F.text == keyboards.BTN_DELEGATIONS)
+async def btn_delegations(message: Message, session: UserSession, **kwargs) -> None:
+    """Список всех делегирований (входящие + исходящие + история)."""
+    kb = _kb(kwargs)
+    api = TaskMateAPI(token=session.token)
+
+    # Получаем все делегации (без фильтра по статусу)
+    try:
+        result = await api.get_delegations({"per_page": 50})
+    except Exception:
+        logger.exception("Ошибка при получении делегирований")
+        await message.answer(messages.error_generic(), reply_markup=kb)
+        return
+
+    delegations = result.get("data", [])
+    if not delegations:
+        await message.answer("🔄 У вас нет делегирований.", reply_markup=kb)
+        return
+
+    # Разделяем на категории
+    incoming = [d for d in delegations if d.get("to_user", {}).get("id") == session.user_id]
+    outgoing = [d for d in delegations if d.get("from_user", {}).get("id") == session.user_id]
+    history = [
+        d for d in delegations
+        if d.get("to_user", {}).get("id") != session.user_id
+        and d.get("from_user", {}).get("id") != session.user_id
+    ]
+
+    msg_parts = []
+
+    if incoming:
+        msg_parts.append(messages.delegation_list(incoming, "incoming"))
+    else:
+        msg_parts.append("📥 <b>Входящих нет</b>")
+
+    if outgoing:
+        msg_parts.append(messages.delegation_list(outgoing, "outgoing"))
+    else:
+        msg_parts.append("📤 <b>Исходящих нет</b>")
+
+    if history:
+        msg_parts.append(messages.delegation_list(history, "history"))
+    else:
+        msg_parts.append("📜 <b>История пуста</b>")
+
+    await message.answer("\n\n".join(msg_parts), reply_markup=kb)
     await message.answer(
         messages.logout_success(), reply_markup=keyboards.remove_menu()
     )

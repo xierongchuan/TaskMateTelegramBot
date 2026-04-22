@@ -26,14 +26,16 @@ BTN_PENDING_REVIEW = "✅ На проверку"
 BTN_OVERDUE = "🔴 Просрочены"
 BTN_DASHBOARD = "📊 Дашборд"
 BTN_LOGOUT = "🚪 Выход"
+BTN_DELEGATIONS = "🔄 Делегирования"
 
 
 def main_menu(role: str) -> ReplyKeyboardMarkup:
     """Главное меню с кнопками по роли."""
     if role == "employee":
         rows = [
-            [KeyboardButton(text=BTN_MY_TASKS), KeyboardButton(text=BTN_MY_SHIFT)],
-            [KeyboardButton(text=BTN_DASHBOARD), KeyboardButton(text=BTN_LOGOUT)],
+            [KeyboardButton(text=BTN_MY_TASKS), KeyboardButton(text=BTN_DELEGATIONS)],
+            [KeyboardButton(text=BTN_MY_SHIFT), KeyboardButton(text=BTN_DASHBOARD)],
+            [KeyboardButton(text=BTN_LOGOUT)],
         ]
     elif role == "observer":
         rows = [

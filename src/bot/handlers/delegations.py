@@ -59,22 +59,45 @@ async def cmd_delegations(message: Message, session: UserSession, **kwargs) -> N
         to_user_id = d.get("to_user", {}).get("id")
         from_user_id = d.get("from_user", {}).get("id")
 
+        task = d.get("task", {})
+        task_id = task.get("id", "?")
+        task_title = task.get("title", "—")
+        task_desc = task.get("description", "")
+        deadline = task.get("deadline")
+        priority = task.get("priority", "medium")
+        from_name = d.get("from_user", {}).get("full_name", "—")
+        to_name = d.get("to_user", {}).get("full_name", "—")
+        reason = d.get("reason", "")
+
+        priority_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "⚪")
+
+        task_info = f"{priority_icon} <b>Задача #{task_id}</b>: {task_title}"
+
+        if task_desc:
+            desc_preview = task_desc[:80] + "..." if len(task_desc) > 80 else task_desc
+            task_info += f"\n   <i>{desc_preview}</i>"
+
+        if deadline:
+            from datetime import datetime
+            try:
+                dt = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+                task_info += f"\n   📅 Дедлайн: {dt.strftime('%d.%m.%Y %H:%M')}"
+            except Exception:
+                pass
+
+        if reason:
+            task_info += f"\n   💬 Причина: {reason}"
+
         if to_user_id == session.user_id:
             kb = keyboards.delegation_incoming_actions(dlg_id)
-            task = d.get("task", {})
-            from_name = d.get("from_user", {}).get("full_name", "—")
             await message.answer(
-                f"📥 Делегирование #{dlg_id} от {from_name} "
-                f"(задача #{task.get('id', '?')})",
+                f"📥 Делегирование #{dlg_id} от {from_name}\n\n{task_info}",
                 reply_markup=kb,
             )
         elif from_user_id == session.user_id:
             kb = keyboards.delegation_cancel_button(dlg_id)
-            task = d.get("task", {})
-            to_name = d.get("to_user", {}).get("full_name", "—")
             await message.answer(
-                f"📤 Делегирование #{dlg_id} → {to_name} "
-                f"(задача #{task.get('id', '?')})",
+                f"📤 Делегирование #{dlg_id} → {to_name}\n\n{task_info}",
                 reply_markup=kb,
             )
 
