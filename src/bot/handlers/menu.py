@@ -232,6 +232,9 @@ async def btn_logout(message: Message, **kwargs) -> None:
 
     await clear_notified(message.chat.id)
     await delete_session(message.chat.id)
+    await message.answer(
+        messages.logout_success(), reply_markup=keyboards.remove_menu()
+    )
 
 
 @router.message(F.text == keyboards.BTN_DELEGATIONS)
@@ -240,46 +243,119 @@ async def btn_delegations(message: Message, session: UserSession, **kwargs) -> N
     kb = _kb(kwargs)
     api = TaskMateAPI(token=session.token)
 
-    # Получаем все делегации (без фильтра по статусу)
+    # Получаем все pending делегации
     try:
-        result = await api.get_delegations({"per_page": 50})
+        result = await api.get_delegations({"status": "pending", "per_page": 50})
     except Exception:
         logger.exception("Ошибка при получении делегирований")
         await message.answer(messages.error_generic(), reply_markup=kb)
         return
 
     delegations = result.get("data", [])
-    if not delegations:
-        await message.answer("🔄 У вас нет делегирований.", reply_markup=kb)
-        return
 
-    # Разделяем на категории
-    incoming = [d for d in delegations if d.get("to_user", {}).get("id") == session.user_id]
-    outgoing = [d for d in delegations if d.get("from_user", {}).get("id") == session.user_id]
-    history = [
+    # Разделяем на входящие и исходящие
+    incoming = [
         d for d in delegations
-        if d.get("to_user", {}).get("id") != session.user_id
-        and d.get("from_user", {}).get("id") != session.user_id
+        if d.get("to_user", {}).get("id") == session.user_id
+    ]
+    outgoing = [
+        d for d in delegations
+        if d.get("from_user", {}).get("id") == session.user_id
     ]
 
-    msg_parts = []
-
+    # Показываем входящие с кнопками принятия/отклонения
     if incoming:
-        msg_parts.append(messages.delegation_list(incoming, "incoming"))
-    else:
-        msg_parts.append("📥 <b>Входящих нет</b>")
+        await message.answer("📥 <b>Входящие запросы на делегирование</b>", reply_markup=kb)
+        for d in incoming:
+            dlg_id = d.get("id")
+            task = d.get("task", {})
+            from_user = d.get("from_user", {})
+            from_name = from_user.get("full_name", "—")
+            task_id = task.get("id", "?")
+            task_title = task.get("title", "—")
+            task_desc = task.get("description", "")
+            deadline = task.get("deadline")
+            priority = task.get("priority", "medium")
+            reason = d.get("reason", "")
 
-    if outgoing:
-        msg_parts.append(messages.delegation_list(outgoing, "outgoing"))
+            priority_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "⚪")
+
+            task_info = f"{priority_icon} <b>Задача #{task_id}</b>: {task_title}"
+            if task_desc:
+                task_info += f"\n   <i>{task_desc[:60]}{'...' if len(task_desc) > 60 else ''}</i>"
+            if deadline:
+                from datetime import datetime
+                try:
+                    dt = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+                    task_info += f"\n   📅 {dt.strftime('%d.%m.%Y %H:%M')}"
+                except Exception:
+                    pass
+            if reason:
+                task_info += f"\n   💬 {reason}"
+
+            task_info += f"\n\n👤 От: {from_name}"
+
+            task_kb = keyboards.delegation_incoming_actions(dlg_id)
+            await message.answer(task_info, reply_markup=task_kb)
     else:
-        msg_parts.append("📤 <b>Исходящих нет</b>")
+        await message.answer("📥 <b>Входящих нет</b>", reply_markup=kb)
+
+    # Показываем исходящие с кнопкой отмены
+    if outgoing:
+        await message.answer("📤 <b>Исходящие запросы на делегирование</b>")
+        for d in outgoing:
+            dlg_id = d.get("id")
+            task = d.get("task", {})
+            to_user = d.get("to_user", {})
+            to_name = to_user.get("full_name", "—")
+            task_id = task.get("id", "?")
+            task_title = task.get("title", "—")
+            priority = task.get("priority", "medium")
+
+            priority_icon = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(priority, "⚪")
+
+            task_info = f"{priority_icon} <b>Задача #{task_id}</b>: {task_title}\n👤 Кому: {to_name}"
+
+            task_kb = keyboards.delegation_cancel_button(dlg_id)
+            await message.answer(task_info, reply_markup=task_kb)
+    else:
+        await message.answer("📤 <b>Исходящих нет</b>", reply_markup=kb)
+
+    # История — каждое делегирование отдельным сообщением
+    try:
+        history_result = await api.get_delegations({"status": "accepted,rejected,cancelled", "per_page": 20})
+        history = history_result.get("data", [])
+    except Exception:
+        history = []
 
     if history:
-        msg_parts.append(messages.delegation_list(history, "history"))
-    else:
-        msg_parts.append("📜 <b>История пуста</b>")
+        await message.answer("📜 <b>История делегирований</b>", reply_markup=kb)
+        for d in history:
+            dlg_id = d.get("id")
+            task = d.get("task", {})
+            from_user = d.get("from_user", {})
+            to_user = d.get("to_user", {})
+            from_name = from_user.get("full_name", "—")
+            to_name = to_user.get("full_name", "—")
+            task_id = task.get("id", "?")
+            task_title = task.get("title", "—")
+            status = d.get("status", "")
+            responded_at = d.get("responded_at")
 
-    await message.answer("\n\n".join(msg_parts), reply_markup=kb)
-    await message.answer(
-        messages.logout_success(), reply_markup=keyboards.remove_menu()
-    )
+            status_icon = {"accepted": "✅", "rejected": "❌", "cancelled": "🚫"}.get(status, "⚪")
+            status_text = {"accepted": "Принято", "rejected": "Отклонено", "cancelled": "Отменено"}.get(status, status)
+
+            history_info = f"{status_icon} <b>Задача #{task_id}</b>: {task_title}\n"
+            history_info += f"   {from_name} → {to_name}\n"
+            history_info += f"   📜 {status_text}"
+            if responded_at:
+                from datetime import datetime
+                try:
+                    dt = datetime.fromisoformat(responded_at.replace("Z", "+00:00"))
+                    history_info += f" ({dt.strftime('%d.%m.%Y %H:%M')}"
+                except Exception:
+                    pass
+
+            await message.answer(history_info)
+    else:
+        await message.answer("📜 <b>История пуста</b>", reply_markup=kb)
