@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 def welcome() -> str:
     return (
-        "👋 <b>TaskMate Bot</b>\n\n"
+        "👋 <b>VanillaFlow Pro</b>\n\n"
         "Бот-клиент для системы управления задачами автосалона.\n\n"
         "Для начала работы авторизуйтесь:\n"
         "/login <i>логин</i> <i>пароль</i>\n\n"
